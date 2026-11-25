@@ -192,7 +192,7 @@ export const conversationRepo = {
    * @param kind - Workspace of the conversation; fixed after creation (defaults to `chat`)
    * @returns The created conversation
    */
-  async create(title?: string, kind: ConversationKind = 'chat'): Promise<Conversation> {
+  async create(title?: string, kind: ConversationKind = 'chat', projectId?: string | null): Promise<Conversation> {
     const userId = getCurrentUserId();
     if (!userId) throw new Error('Authentication required to persist conversations');
 
@@ -206,6 +206,7 @@ export const conversationRepo = {
       messageCount: 0,
       lastMessagePreview: '',
       ...(kind === 'research_coach' ? { kind } : {}),
+      ...(projectId ? { projectId } : {}),
     };
     await db.transaction('rw', [db.conversations, db.conversationSyncQueue], async () => {
       await db.conversations.add(conversation);

@@ -31,6 +31,32 @@ export interface Conversation {
    * collaboration functions, never through the owner-only tables.
    */
   collaboration?: ConversationCollaboration;
+  /** Project the conversation belongs to; null or missing means none. */
+  projectId?: string | null;
+}
+
+/**
+ * Project entity: groups conversations under shared instructions and a
+ * project-scoped memory profile (see `supabase/migrations/*_projects.sql`).
+ */
+export interface Project {
+  /** UUID v4 - Primary key */
+  id: string;
+  userId: string;
+  name: string;
+  /** Learner-written instructions every chat in the project follows. */
+  instructions: string;
+  /** When false, project chats run without account-level memory. */
+  useAccountMemory: boolean;
+  isPinned: boolean;
+  /** Backend-generated memory profile; null when none exists yet. */
+  memorySummary: string | null;
+  memoryDetails: string[];
+  memoryUpdatedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  /** Local-only: the latest local write has not reached Supabase yet. */
+  syncPending?: boolean;
 }
 
 export interface ConversationCollaboration {

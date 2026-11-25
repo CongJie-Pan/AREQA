@@ -1077,6 +1077,51 @@ button.areqa-topic-finder-badge {
   &:hover { background: var(--areqa-account-hover); }
 }
 
+/* Projects entry: the "+" appears on hover, like a trailing action. */
+.areqa-conversation-projects-nav {
+  position: relative;
+
+  &:hover .areqa-conversation-projects-create,
+  .areqa-conversation-projects-create:focus-visible { opacity: 1; }
+}
+
+.areqa-conversation-projects-create {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(-50%);
+
+  &:hover { background: var(--areqa-account-hover); }
+}
+
+@media (hover: none) {
+  .areqa-conversation-projects-create { opacity: 1; }
+}
+
+.areqa-conversation-project-child {
+  padding-left: 35px;
+  color: var(--muted-foreground);
+}
+
+.areqa-conversation-project-more {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+  text-align: left;
+}
+
 .areqa-conversation-search-results {
   display: grid;
   gap: 2px;

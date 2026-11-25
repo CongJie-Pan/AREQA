@@ -30,6 +30,8 @@ import { TextSelectionToolbar } from '@/components/TextSelectionToolbar';
 import { GumPanel } from '@/components/GumPanel';
 import { MailboxPanel } from '@/components/MailboxPanel';
 import { NotesPanel } from '@/components/NotesPanel';
+import { ProjectsPanel } from '@/components/Projects';
+import { useProjectStore } from '@/store/projects';
 import { ProactiveManager } from '@/components/ProactiveManager';
 import { AuthPrompt } from '@/components/Auth';
 import { LiveTutorPanel } from '@/components/LiveTutor';
@@ -379,11 +381,14 @@ export function ChatContainer({ className, openingShare = false }: ChatContainer
 
       try {
         setShowAuthPrompt(false);
+        if (useProjectStore.getState().loadedUserId !== historyUserId) useProjectStore.getState().reset();
         const localLoadStartedAt = performance.now();
         await initializeChatService(historyUserId);
         if (cancelled) return;
         await loadNotes(historyUserId);
         if (cancelled) return;
+        // Projects paint from the local cache and merge the cloud in the background.
+        void useProjectStore.getState().load(historyUserId);
         logger.info('chat_history_local_cache_loaded', {
           component: 'ChatContainer',
           durationMs: Math.round(performance.now() - localLoadStartedAt),
@@ -598,6 +603,7 @@ export function ChatContainer({ className, openingShare = false }: ChatContainer
 
   // Handle conversation selection
   const handleConversationSelect = useCallback(() => {
+    useProjectStore.getState().setDraftProjectId(null);
     exitSharedView();
     closeSidebar();
     setGumPanelType(null); // Return to chat view
@@ -605,6 +611,7 @@ export function ChatContainer({ className, openingShare = false }: ChatContainer
 
   // Handle new conversation
   const handleNewConversation = useCallback(() => {
+    useProjectStore.getState().setDraftProjectId(null);
     exitSharedView();
     // Just clear UI state and deselect active conversation
     useConversationStore.getState().clearActiveConversation();
@@ -613,6 +620,41 @@ export function ChatContainer({ className, openingShare = false }: ChatContainer
     closeSidebar();
     setGumPanelType(null); // Return to chat view
   }, [closeSidebar, exitSharedView]);
+
+  // Projects are a signed-in feature; signing out drops the cached list.
+  useEffect(() => {
+    if (!historyUserId) useProjectStore.getState().reset();
+  }, [historyUserId]);
+
+  // The Projects page replaces the conversation view, so leave the active
+  // conversation first: a send from a project page must start a new chat.
+  const openSidePanel = useCallback((type: Exclude<SidePanelType, null>) => {
+    const projectView = useProjectStore.getState().view;
+    // Only an open project page may hand its project to the next new chat.
+    useProjectStore.getState().setDraftProjectId(
+      type === 'projects' && projectView.kind === 'project' ? projectView.projectId : null,
+    );
+    if (type === 'projects') {
+      exitSharedView();
+      useConversationStore.getState().clearActiveConversation();
+      useChatStore.getState().clearMessages();
+      useChatStore.getState().resetStreamingState();
+    }
+    setGumPanelType(type);
+    closeSidebar(); // Close sidebar on mobile when opening panel
+  }, [closeSidebar, exitSharedView]);
+
+  const handleStartProjectChat = useCallback<React.ComponentProps<typeof ProjectsPanel>['onStartChat']>(
+    (content, attachments = [], options = {}) => {
+      // The draft project set by the project page is consumed when the conversation is created.
+      logger.info('project_chat_started', {
+        component: 'ChatContainer', projectId: useProjectStore.getState().draftProjectId,
+      });
+      setGumPanelType(null);
+      return handleSend(content, attachments, options);
+    },
+    [handleSend],
+  );
 
   const resizeAvatarPane = useCallback((event: PointerEvent) => {
     const resizeState = avatarResizeStateRef.current;
@@ -910,10 +952,7 @@ export function ChatContainer({ className, openingShare = false }: ChatContainer
           onSelect={handleConversationSelect}
           onNew={handleNewConversation}
           externalSidebarToggle
-          onSelectGumPanel={(type) => {
-            setGumPanelType(type);
-            closeSidebar(); // Close sidebar on mobile when opening panel
-          }}
+          onSelectGumPanel={openSidePanel}
         />
         {sidebarOpen && (
           <div
@@ -1003,6 +1042,15 @@ export function ChatContainer({ className, openingShare = false }: ChatContainer
             <MailboxPanel onClose={() => setGumPanelType(null)} />
           ) : gumPanelType === 'notes' ? (
             <NotesPanel onClose={() => setGumPanelType(null)} />
+          ) : gumPanelType === 'projects' ? (
+            <ProjectsPanel
+              onStartChat={handleStartProjectChat}
+              composerDisabled={isStreaming || isGeneratingImage}
+              onOpenConversation={(conversationId) => {
+                void switchConversation(conversationId).then(handleConversationSelect);
+              }}
+              onOpenAccountMemory={() => setGumPanelType('memory')}
+            />
           ) : gumPanelType === 'memory' ? (
             <GumPanel
               open={true}

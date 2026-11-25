@@ -48,7 +48,8 @@ class OrchestrationExecutionMixin:
                       attachment_visual_sources: Optional[List[Dict[str, Any]]] = None,
                       image_attachments: Optional[List[Any]] = None,
                       attachment_manifest: Any = None,
-                      isolated_context: bool = False) -> AsyncGenerator[str, None]:
+                      isolated_context: bool = False,
+                      project_prompt: str = "") -> AsyncGenerator[str, None]:
         last_user_msg = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
 
         request_id_header = request.headers.get("x-request-id") if request and request.headers else None
@@ -402,6 +403,7 @@ class OrchestrationExecutionMixin:
             attachments=attachments, attachment_visual_sources=attachment_visual_sources,
             pdf_attachment_count=pdf_attachment_count, max_tokens=max_tokens,
             **({"isolated_context": True} if isolated_context else {}),
+            **({"project_prompt": project_prompt} if project_prompt else {}),
             progress=progress_relay.report,
         ))
         try:

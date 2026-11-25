@@ -14,6 +14,7 @@ import { useChatStore } from '@/store/chat';
 import type { DisplayMessage, SearchMode, StreamingImageSlot, TutorProfile } from '@/store/chat';
 import type { CitationSource } from '@/components/Citations';
 import { useConversationStore } from '@/store/conversation';
+import { useProjectStore } from '@/store/projects';
 import { resolveConversationKind } from '@/utils/conversationKind';
 import { useFeatureStore } from '@/store/features';
 import { useNotesStore } from '@/store/notes';
@@ -487,7 +488,10 @@ export async function sendMessage(
     isNewConversation = true;
     if (shouldPersist) {
       // Create new conversation in database first to get the ID; it joins the visible workspace.
-      const conversation = await databaseService.conversation.create(undefined, conversationStore.workspace);
+      // A send from a project page joins that project (the draft is consumed once).
+      const conversation = await databaseService.conversation.create(
+        undefined, conversationStore.workspace, useProjectStore.getState().takeDraftProjectId(),
+      );
       activeConversationId = conversation.id;
 
       // Add to the conversation list in store without selecting yet

@@ -118,6 +118,9 @@ export async function createChatStream(
   try {
     const requestId = generateUUID();
     const conversationKind = resolveConversationKind(useConversationStore.getState(), conversationId);
+    const projectId = useConversationStore.getState().conversations.find(
+      (conversation) => conversation.id === conversationId,
+    )?.projectId ?? null;
     const requestPayload = {
       messages,
       conversation_id: conversationId,
@@ -132,6 +135,8 @@ export async function createChatStream(
       // The backend also ignores subject tutors in Topic Finder; sending general keeps logs honest.
       tutor_profile: conversationKind === 'research_coach' ? 'general' : options.tutorProfile ?? 'general',
       conversation_kind: conversationKind,
+      // The backend loads this project's instructions and memory with the caller's token.
+      ...(projectId ? { project_id: projectId } : {}),
       response_mode: options.responseMode ?? 'text',
       speaking_practice: options.speakingPractice ?? false,
     };

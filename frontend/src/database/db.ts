@@ -11,6 +11,7 @@ import type {
   MessageDeletion,
   MessageSyncQueueItem,
   Note,
+  Project,
   Setting,
 } from './schema';
 
@@ -75,6 +76,8 @@ class PerplexityQADatabase extends Dexie {
   settings!: EntityTable<Setting, 'key'>;
   /** Notes table */
   notes!: EntityTable<Note, 'id'>;
+  /** Projects table (local cache of the Supabase `projects` rows). */
+  projects!: EntityTable<Project, 'id'>;
 
   constructor() {
     super('PerplexityQA');
@@ -181,6 +184,18 @@ class PerplexityQADatabase extends Dexie {
       conversationSyncQueue: 'id, userId, queuedAt, updatedAt, [userId+queuedAt]',
       settings: 'key',
       notes: 'id, userId, conversationId, messageId, createdAt, updatedAt, isPinned, *tags, [userId+createdAt], [userId+messageId], [userId+isPinned]',
+    });
+
+    // Version 11: Projects group conversations; conversations index their project.
+    this.version(11).stores({
+      conversations: 'id, userId, createdAt, updatedAt, projectId',
+      messages: 'id, userId, conversationId, createdAt, updatedAt, [conversationId+createdAt]',
+      messageDeletions: 'id, userId, conversationId, deletedAt, [userId+deletedAt]',
+      messageSyncQueue: 'id, userId, conversationId, queuedAt, updatedAt, [userId+queuedAt]',
+      conversationSyncQueue: 'id, userId, queuedAt, updatedAt, [userId+queuedAt]',
+      settings: 'key',
+      notes: 'id, userId, conversationId, messageId, createdAt, updatedAt, isPinned, *tags, [userId+createdAt], [userId+messageId], [userId+isPinned]',
+      projects: 'id, userId, updatedAt',
     });
 
     // Handle multi-tab upgrades

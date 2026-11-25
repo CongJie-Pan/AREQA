@@ -260,6 +260,49 @@ export type TranslationKey =
   | 'conversationSearchEmpty'
   | 'conversationRecents'
   | 'noPinnedConversations'
+  | 'projects'
+  | 'projectCreate'
+  | 'projectNew'
+  | 'projectNamePlaceholder'
+  | 'projectNameRequired'
+  | 'projectSearchPlaceholder'
+  | 'projectSortRecent'
+  | 'projectSortName'
+  | 'projectsEmpty'
+  | 'projectNewSession'
+  | 'projectRecents'
+  | 'projectNoConversations'
+  | 'projectViewAll'
+  | 'projectInstructions'
+  | 'projectInstructionsHint'
+  | 'projectInstructionsPlaceholder'
+  | 'projectAdd'
+  | 'projectEdit'
+  | 'projectView'
+  | 'projectMemory'
+  | 'projectMemoryProfile'
+  | 'projectMemoryEmpty'
+  | 'projectMemoryUpdated'
+  | 'projectMemoryLastUpdated'
+  | 'projectMemorySummary'
+  | 'projectMemoryDetails'
+  | 'projectMemoryRefresh'
+  | 'projectMemoryRefreshFailed'
+  | 'projectMemoryNothingToLearn'
+  | 'projectMemoryRevisePlaceholder'
+  | 'projectMemoryDeleteConfirm'
+  | 'projectUseAccountMemory'
+  | 'projectUseAccountMemoryHint'
+  | 'projectViewAccountMemory'
+  | 'projectAddTo'
+  | 'projectRemoveFrom'
+  | 'projectSearchOrCreate'
+  | 'projectCreateNamed'
+  | 'projectAddedTo'
+  | 'projectRemoved'
+  | 'projectDeleteConfirm'
+  | 'projectSaveFailed'
+  | 'projectSignInRequired'
   | 'rename'
   | 'unpin'
   | 'pin'
@@ -721,6 +764,49 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     conversationSearchEmpty: '找不到符合的對話',
     conversationRecents: '最近',
     noPinnedConversations: '尚無置頂對話',
+    projects: "專案",
+    projectCreate: "建立專案",
+    projectNew: "新增專案",
+    projectNamePlaceholder: "專案名稱",
+    projectNameRequired: "請輸入專案名稱",
+    projectSearchPlaceholder: "搜尋專案",
+    projectSortRecent: "依最近活動排序",
+    projectSortName: "依名稱排序",
+    projectsEmpty: "還沒有專案。建立一個專案，讓相關對話共用指示與記憶。",
+    projectNewSession: "在 {name} 中新增對話",
+    projectRecents: "最近項目",
+    projectNoConversations: "這個專案還沒有對話。",
+    projectViewAll: "檢視全部",
+    projectInstructions: "指示",
+    projectInstructionsHint: "這個專案中的每個對話都會遵循這些指示。",
+    projectInstructionsPlaceholder: "例如：用繁體中文回答，先給重點再給細節。",
+    projectAdd: "新增",
+    projectEdit: "編輯",
+    projectView: "檢視",
+    projectMemory: "記憶",
+    projectMemoryProfile: "概況",
+    projectMemoryEmpty: "還沒有專案記憶。在專案裡聊幾次後按「更新」，AREQA 會整理出重點。",
+    projectMemoryUpdated: "{time}更新",
+    projectMemoryLastUpdated: "最後更新",
+    projectMemorySummary: "摘要",
+    projectMemoryDetails: "細節",
+    projectMemoryRefresh: "更新",
+    projectMemoryRefreshFailed: "暫時無法更新專案記憶",
+    projectMemoryNothingToLearn: "這個專案還沒有已同步的對話可以整理",
+    projectMemoryRevisePlaceholder: "告訴 AREQA 要修改什麼",
+    projectMemoryDeleteConfirm: "要刪除這個專案記憶嗎？",
+    projectUseAccountMemory: "使用帳號記憶",
+    projectUseAccountMemoryHint: "讓 AREQA 在這個專案和專案外的對話之間共享記憶。",
+    projectViewAccountMemory: "檢視帳號記憶",
+    projectAddTo: "加入專案",
+    projectRemoveFrom: "移出專案",
+    projectSearchOrCreate: "搜尋或建立專案",
+    projectCreateNamed: "建立「{name}」",
+    projectAddedTo: "已加入「{name}」",
+    projectRemoved: "已移出專案",
+    projectDeleteConfirm: "刪除專案「{name}」？裡面的對話會保留，只是不再屬於這個專案。",
+    projectSaveFailed: "專案儲存失敗，請稍後再試",
+    projectSignInRequired: "登入後即可使用專案",
     rename: '重新命名',
     unpin: '取消釘選',
     pin: '釘選聊天',
@@ -1156,6 +1242,49 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     conversationSearchEmpty: '找不到匹配的对话',
     conversationRecents: '最近',
     noPinnedConversations: '暂无置顶对话',
+    projects: "项目",
+    projectCreate: "创建项目",
+    projectNew: "新建项目",
+    projectNamePlaceholder: "项目名称",
+    projectNameRequired: "请输入项目名称",
+    projectSearchPlaceholder: "搜索项目",
+    projectSortRecent: "按最近活动排序",
+    projectSortName: "按名称排序",
+    projectsEmpty: "还没有项目。创建一个项目，让相关对话共用指示与记忆。",
+    projectNewSession: "在 {name} 中新建对话",
+    projectRecents: "最近项目",
+    projectNoConversations: "这个项目还没有对话。",
+    projectViewAll: "查看全部",
+    projectInstructions: "指示",
+    projectInstructionsHint: "这个项目中的每个对话都会遵循这些指示。",
+    projectInstructionsPlaceholder: "例如：用简体中文回答，先给重点再给细节。",
+    projectAdd: "添加",
+    projectEdit: "编辑",
+    projectView: "查看",
+    projectMemory: "记忆",
+    projectMemoryProfile: "概况",
+    projectMemoryEmpty: "还没有项目记忆。在项目里聊几次后点“更新”，AREQA 会整理出重点。",
+    projectMemoryUpdated: "{time}更新",
+    projectMemoryLastUpdated: "最后更新",
+    projectMemorySummary: "摘要",
+    projectMemoryDetails: "细节",
+    projectMemoryRefresh: "更新",
+    projectMemoryRefreshFailed: "暂时无法更新项目记忆",
+    projectMemoryNothingToLearn: "这个项目还没有已同步的对话可以整理",
+    projectMemoryRevisePlaceholder: "告诉 AREQA 要修改什么",
+    projectMemoryDeleteConfirm: "要删除这个项目记忆吗？",
+    projectUseAccountMemory: "使用账号记忆",
+    projectUseAccountMemoryHint: "让 AREQA 在这个项目和项目外的对话之间共享记忆。",
+    projectViewAccountMemory: "查看账号记忆",
+    projectAddTo: "加入项目",
+    projectRemoveFrom: "移出项目",
+    projectSearchOrCreate: "搜索或创建项目",
+    projectCreateNamed: "创建“{name}”",
+    projectAddedTo: "已加入“{name}”",
+    projectRemoved: "已移出项目",
+    projectDeleteConfirm: "删除项目“{name}”？里面的对话会保留，只是不再属于这个项目。",
+    projectSaveFailed: "项目保存失败，请稍后再试",
+    projectSignInRequired: "登录后即可使用项目",
     rename: '重新命名',
     unpin: '取消置顶',
     pin: '置顶聊天',
@@ -1591,6 +1720,49 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     conversationSearchEmpty: 'No matching chats',
     conversationRecents: 'Recents',
     noPinnedConversations: 'No pinned chats',
+    projects: "Projects",
+    projectCreate: "Create project",
+    projectNew: "New project",
+    projectNamePlaceholder: "Project name",
+    projectNameRequired: "Enter a project name",
+    projectSearchPlaceholder: "Search projects",
+    projectSortRecent: "Sort by recent activity",
+    projectSortName: "Sort by name",
+    projectsEmpty: "No projects yet. Create one so related chats share instructions and memory.",
+    projectNewSession: "New chat in {name}",
+    projectRecents: "Recents",
+    projectNoConversations: "No chats in this project yet.",
+    projectViewAll: "View all",
+    projectInstructions: "Instructions",
+    projectInstructionsHint: "Every chat in this project follows these instructions.",
+    projectInstructionsPlaceholder: "e.g. Answer in English, key points first.",
+    projectAdd: "Add",
+    projectEdit: "Edit",
+    projectView: "View",
+    projectMemory: "Memory",
+    projectMemoryProfile: "Profile",
+    projectMemoryEmpty: "No project memory yet. Chat in this project, then press Update and AREQA will summarize it.",
+    projectMemoryUpdated: "Updated {time}",
+    projectMemoryLastUpdated: "Last updated",
+    projectMemorySummary: "Summary",
+    projectMemoryDetails: "Details",
+    projectMemoryRefresh: "Update",
+    projectMemoryRefreshFailed: "Could not update project memory",
+    projectMemoryNothingToLearn: "No synced chats in this project to learn from yet",
+    projectMemoryRevisePlaceholder: "Tell AREQA what to change",
+    projectMemoryDeleteConfirm: "Delete this project memory?",
+    projectUseAccountMemory: "Use account memory",
+    projectUseAccountMemoryHint: "Allow AREQA to share memory between this project and your chats outside of projects.",
+    projectViewAccountMemory: "View account memory",
+    projectAddTo: "Add to project",
+    projectRemoveFrom: "Remove from project",
+    projectSearchOrCreate: "Search or create a project",
+    projectCreateNamed: "Create \"{name}\"",
+    projectAddedTo: "Added to \"{name}\"",
+    projectRemoved: "Removed from project",
+    projectDeleteConfirm: "Delete \"{name}\"? Its chats are kept; they just leave the project.",
+    projectSaveFailed: "Could not save the project. Try again later.",
+    projectSignInRequired: "Sign in to use projects",
     rename: 'Rename',
     unpin: 'Unpin',
     pin: 'Pin chat',

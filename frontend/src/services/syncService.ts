@@ -36,6 +36,7 @@ type CloudConversationRow = {
   title: string;
   branch_origin?: Conversation['branchOrigin'] | null;
   kind?: unknown;
+  project_id?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -274,6 +275,8 @@ async function mergeCloudConversations(
         // Without the kind column (migration pending) the kind exists only locally, so keep it.
         ...(normalizeConversationKind('kind' in c ? c.kind : localConv?.kind) === TOPIC_FINDER_KIND
           ? { kind: TOPIC_FINDER_KIND } : {}),
+        // Without the project_id column (migration pending) the project exists only locally.
+        projectId: 'project_id' in c ? c.project_id ?? null : localConv?.projectId ?? null,
         createdAt: new Date(c.created_at),
         updatedAt: cloudDate,
         messageCount: msgCountByConv[c.id] || 0,
@@ -716,13 +719,15 @@ export const syncService = {
     if (isMemberConversation(conv)) return true;
 
     try {
-      const payload: Record<string, unknown> = {
+      let payload: Record<string, unknown> = {
         id: conv.id,
         user_id: conv.userId,
         title: conv.title,
         ...(conv.branchOrigin ? { branch_origin: conv.branchOrigin } : {}),
         // Chat rows omit kind and keep the column default, so older databases sync unchanged.
         ...(isTopicFinderConversation(conv) ? { kind: TOPIC_FINDER_KIND } : {}),
+        // Only rows that were ever in a project send the column (null when removed).
+        ...(conv.projectId !== undefined ? { project_id: conv.projectId } : {}),
         created_at: conv.createdAt.toISOString(),
         updated_at: conv.updatedAt.toISOString(),
       };
@@ -731,8 +736,18 @@ export const syncService = {
         // The kind migration is not applied yet: keep the conversation syncing; the kind stays local.
         const { kind: _unsupported, ...rest } = payload;
         void _unsupported;
+        payload = rest;
         logger.warn('sync_conversation_kind_column_missing', { component: 'syncService', conversationId: conv.id });
-        ({ error } = await supabase.from('conversations').upsert(rest));
+        ({ error } = await supabase.from('conversations').upsert(payload));
+      }
+      if (error && 'project_id' in payload
+        && (isMissingColumnError(error, 'project_id') || (error as { code?: string }).code === '23503')) {
+        // Projects migration pending, or the project row has not synced yet: the link stays local for now.
+        const { project_id: _deferred, ...rest } = payload;
+        void _deferred;
+        payload = rest;
+        logger.warn('sync_conversation_project_link_deferred', { component: 'syncService', conversationId: conv.id });
+        ({ error } = await supabase.from('conversations').upsert(payload));
       }
       if (error) throw error;
       return true;

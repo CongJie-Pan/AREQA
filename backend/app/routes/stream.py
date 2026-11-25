@@ -29,6 +29,7 @@ from services.conversation.collaboration import (
 from services.conversation.research_coach import (
     RESEARCH_COACH_KIND, normalize_conversation_kind, resolve_prompt_profile,
 )
+from services.conversation.projects import is_project_id, load_project_context, render_project_prompt
 from services.conversation.tutor_profile import normalize_tutor_profile
 from services.memory_diagnostics import log_memory_snapshot
 
@@ -54,6 +55,8 @@ class ChatRequest(BaseModel):
     tutor_profile: str = "general"
     # Fixed per conversation: "chat" or "research_coach" (Topic Finder). Unknown values mean chat.
     conversation_kind: Any = "chat"
+    # Project the conversation belongs to; its instructions and memory join the prompt.
+    project_id: str = ""
     response_mode: Literal["text", "voice"] = "text"
     speaking_practice: bool = False
     # Opt-in: parse uploads inside the SSE stream so progress and errors reach the chat UI.
@@ -115,6 +118,7 @@ async def parse_stream_request(request: Request) -> tuple[ChatRequest, list[Any]
         payload = {
             **payload,
             "conversation_id": payload.get("conversation_id", form.get("conversation_id", "")),
+            "project_id": payload.get("project_id", form.get("project_id", "")),
             "use_rag": payload.get("use_rag", _parse_bool(form.get("use_rag"))),
             "use_web_search": payload.get("use_web_search", _parse_bool(form.get("use_web_search"))),
             "search_mode": payload.get("search_mode", form.get("search_mode") or None),
@@ -169,16 +173,45 @@ async def stream_endpoint(
 
     if current_user_id:
         await _apply_collaboration_context(request, chat_req, safe_request_id)
+    project_prompt = await _resolve_project_prompt(request, chat_req, current_user_id, safe_request_id)
 
     if uploads and chat_req.attachment_progress:
         return StreamingResponse(
             _stream_with_attachment_progress(
-                request, chat_req, uploads, current_user_id, tutor_profile, safe_request_id,
+                request, chat_req, uploads, current_user_id, tutor_profile, safe_request_id, project_prompt,
             ),
             media_type="text/event-stream",
             headers=_STREAM_HEADERS,
         )
-    return await _prepare_stream(request, chat_req, uploads, current_user_id, tutor_profile, safe_request_id)
+    return await _prepare_stream(
+        request, chat_req, uploads, current_user_id, tutor_profile, safe_request_id, project_prompt,
+    )
+
+
+async def _resolve_project_prompt(request: Request, chat_req: ChatRequest, current_user_id: str | None,
+                                  safe_request_id: str) -> str:
+    """Load the project overlay for signed-in turns; a project may also switch account memory off.
+
+    A failed lookup answers without the overlay and keeps the default (account
+    memory on), because the toggle defaults to on for every project.
+    """
+    if not current_user_id or not is_project_id(chat_req.project_id):
+        return ""
+    context = await load_project_context(
+        chat_req.project_id, bearer_token(request.headers.get("authorization")),
+    )
+    if context.state != "loaded":
+        logger.info("stream.project_context_skipped project_id=%s state=%s request_id=%s",
+                    chat_req.project_id, context.state, safe_request_id)
+        return ""
+    if not context.use_account_memory:
+        chat_req.isolated_context = True
+    overlay = render_project_prompt(context)
+    logger.info(
+        "stream.project_context_applied project_id=%s overlay_chars=%d account_memory=%s request_id=%s",
+        chat_req.project_id, len(overlay), context.use_account_memory, safe_request_id,
+    )
+    return overlay
 
 
 _STREAM_HEADERS = {"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no", "Connection": "keep-alive"}
@@ -216,7 +249,8 @@ async def _apply_collaboration_context(request: Request, chat_req: ChatRequest, 
     )
 
 
-async def _stream_with_attachment_progress(request, chat_req, uploads, current_user_id, tutor_profile, safe_request_id):
+async def _stream_with_attachment_progress(request, chat_req, uploads, current_user_id, tutor_profile, safe_request_id,
+                                           project_prompt=""):
     """Parse uploads inside the SSE stream so the learner sees progress and errors.
 
     Legacy clients (no ``attachment_progress`` flag) keep receiving HTTP errors
@@ -226,7 +260,9 @@ async def _stream_with_attachment_progress(request, chat_req, uploads, current_u
 
     try:
         yield progress_event("reading_attachments", 0, len(uploads))
-        response = await _prepare_stream(request, chat_req, uploads, current_user_id, tutor_profile, safe_request_id)
+        response = await _prepare_stream(
+            request, chat_req, uploads, current_user_id, tutor_profile, safe_request_id, project_prompt,
+        )
         async for event in response.body_iterator:
             yield event
     except HTTPException as exc:
@@ -246,7 +282,8 @@ async def _stream_with_attachment_progress(request, chat_req, uploads, current_u
         await request.close()
 
 
-async def _prepare_stream(request, chat_req, uploads, current_user_id, tutor_profile, safe_request_id):
+async def _prepare_stream(request, chat_req, uploads, current_user_id, tutor_profile, safe_request_id,
+                          project_prompt=""):
     """Process uploads and context, then return the orchestration SSE response."""
     processed_attachments = []
     if uploads:
@@ -435,6 +472,7 @@ async def _prepare_stream(request, chat_req, uploads, current_user_id, tutor_pro
             image_attachments=processed_attachments,
             attachment_manifest=attachment_manifest,
             **({"isolated_context": True} if chat_req.isolated_context else {}),
+            **({"project_prompt": project_prompt} if project_prompt else {}),
         )
 
     return StreamingResponse(

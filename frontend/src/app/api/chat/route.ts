@@ -28,6 +28,7 @@ const SUPPORTED_ATTACHMENT_TYPES = new Set([
   'text/plain',
   'text/markdown',
 ]);
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const GENERIC_TEXT_UPLOAD_TYPES = new Set(['', 'application/octet-stream', 'text/plain', 'text/markdown']);
 
 interface ChatRequestBody {
@@ -41,6 +42,8 @@ interface ChatRequestBody {
   tutor_profile?: 'general' | 'english';
   /** Workspace of the conversation; only these two values reach the backend. */
   conversation_kind?: 'chat' | 'research_coach';
+  /** Project id (UUID); the backend loads the project with the caller's token. */
+  project_id?: string;
   response_mode?: 'text' | 'voice';
   speaking_practice?: boolean;
   force_think?: boolean;
@@ -280,6 +283,8 @@ export async function POST(request: NextRequest) {
           tutor_profile: body.tutor_profile === 'english' ? 'english' : 'general',
           // Without this field the backend treats Topic Finder turns as ordinary chat.
           conversation_kind: body.conversation_kind === 'research_coach' ? 'research_coach' : 'chat',
+          ...(typeof body.project_id === 'string' && UUID_PATTERN.test(body.project_id)
+            ? { project_id: body.project_id } : {}),
           response_mode: body.response_mode === 'voice' ? 'voice' : 'text',
           speaking_practice: body.speaking_practice === true,
           force_think: body.force_think || false,

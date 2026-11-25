@@ -6,6 +6,7 @@ import logging
 import time
 
 from config import settings
+from services.conversation.projects import apply_project_prompt
 from services.conversation.research_coach import TOPIC_FINDER_MAX_TOKENS, is_research_coach
 from services.memory_diagnostics import log_memory_snapshot
 from services.query_policy.models import (
@@ -19,7 +20,7 @@ async def prepare_answer(service, *, user_id, conversation_id, messages, use_rag
                          turn_plan, turn_plan_enabled, response_policy, interface_language,
                          tutor_profile, response_mode, has_attachments, attachments,
                          attachment_visual_sources, pdf_attachment_count, max_tokens, isolated_context=False,
-                         progress=None):
+                         project_prompt="", progress=None):
     """Assemble grounded prompts, verified visual inventory and generation limits.
 
     Args:
@@ -53,6 +54,8 @@ async def prepare_answer(service, *, user_id, conversation_id, messages, use_rag
         **({"isolated_context": True} if isolated_context else {}),
     )
     trace.mark("prompt_assembly_finished")
+    # Project instructions and memory follow the assembled AREQA prompt so system rules keep priority.
+    final_messages = apply_project_prompt(final_messages, project_prompt)
     final_messages = service._attach_to_latest_user_message(final_messages, attachments or [])
     if has_attachments:
         final_messages = service._add_attachment_grounding_instruction(final_messages)

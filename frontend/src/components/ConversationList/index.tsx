@@ -9,7 +9,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image';
 import { App, Dropdown, Input, Modal, Spin } from 'antd';
 import type { MenuProps } from 'antd';
-import { MoreHorizontal, Pencil, Pin, PinOff, Plus, Search, ChevronRight, Trash2, PanelLeftClose, Mail as MailIcon } from 'lucide-react';
+import { MoreHorizontal, Pencil, Pin, PinOff, Plus, Search, ChevronRight, Trash2, PanelLeftClose, Mail as MailIcon, FolderClosed, FolderInput, FolderMinus } from 'lucide-react';
 import { BranchIcon, conversationBranchesEnabled } from '@/components/ConversationBranch/BranchIcon';
 import { useConversationStore } from '@/store/conversation';
 import { useChatStore } from '@/store/chat';
@@ -27,10 +27,15 @@ import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { logger } from '@/utils/logger';
 import { conversationKindOf } from '@/utils/conversationKind';
 import { WorkspaceSwitch } from '@/components/WorkspaceSwitch';
+import { ProjectNameModal, ProjectPickerModal } from '@/components/Projects';
+import { useProjectStore } from '@/store/projects';
+import { useAuthStore } from '@/store/auth';
 
 const PINNED_CONVERSATION_IDS_KEY = 'areqa:pinned-conversation-ids';
 const LONG_PRESS_MENU_MS = 520;
 const DEFAULT_CONVERSATION_TITLES = new Set(['新對話', '新对话']);
+/** Conversations listed under a pinned project before "View all". */
+const PINNED_PROJECT_PREVIEW_COUNT = 3;
 
 export interface ConversationListProps {
   /** Callback when conversation is selected */
@@ -74,6 +79,11 @@ export function ConversationList({
   const [renameTargetId, setRenameTargetId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [isRenaming, setIsRenaming] = useState(false);
+  const [projectPickerConversationId, setProjectPickerConversationId] = useState<string | null>(null);
+  const [createProjectOpen, setCreateProjectOpen] = useState(false);
+  const isSignedIn = useAuthStore((state) => Boolean(state.user));
+  const projects = useProjectStore((state) => state.projects);
+  const pinnedProjects = useMemo(() => projects.filter((project) => project.isPinned), [projects]);
 
   const conversations = useConversationStore((state) => state.conversations);
   const workspace = useConversationStore((state) => state.workspace);
@@ -221,6 +231,24 @@ export function ConversationList({
     ));
   }, [pinnedIds]);
 
+  const openProjectPage = useCallback((projectId: string | null) => {
+    if (projectId) useProjectStore.getState().showProject(projectId);
+    else useProjectStore.getState().showList();
+    onSelectGumPanel?.('projects');
+  }, [onSelectGumPanel]);
+
+  const assignProject = useCallback(async (conversationId: string, projectId: string | null) => {
+    try {
+      await databaseService.conversation.update(conversationId, { projectId });
+      useConversationStore.getState().updateConversation(conversationId, { projectId, updatedAt: new Date() });
+      const project = projectId ? useProjectStore.getState().projects.find((item) => item.id === projectId) : null;
+      logger.info('conversation_project_assigned', { component: 'ConversationList', conversationId, projectId });
+      antMessageApi.success(project ? t('projectAddedTo', { name: project.name }) : t('projectRemoved'));
+    } catch {
+      antMessageApi.error(t('projectSaveFailed'));
+    }
+  }, [antMessageApi, t]);
+
   const isMobileViewport = useCallback(() => (
     window.matchMedia('(max-width: 768px)').matches
   ), []);
@@ -328,6 +356,23 @@ export function ConversationList({
           <Search size={17} aria-hidden="true" />
           <span>{t('conversationSearch')}</span>
         </button>
+        {isSignedIn && (
+          <div className="areqa-conversation-projects-nav">
+            <button type="button" className="areqa-conversation-search-button" onClick={() => openProjectPage(null)}>
+              <FolderClosed size={17} aria-hidden="true" />
+              <span>{t('projects')}</span>
+            </button>
+            <button
+              type="button"
+              className="areqa-conversation-projects-create"
+              aria-label={t('projectCreate')}
+              title={t('projectCreate')}
+              onClick={() => setCreateProjectOpen(true)}
+            >
+              <Plus size={15} aria-hidden="true" />
+            </button>
+          </div>
+        )}
         {mailboxEnabled && (
           <button className="areqa-conversation-panel-button" onClick={() => onSelectGumPanel?.('mailbox')}>
             <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
@@ -351,6 +396,45 @@ export function ConversationList({
 
       {/* List Area */}
       <div className="areqa-conversation-scroll-list">
+        {isSignedIn && pinnedProjects.length > 0 && (
+          <section className="areqa-conversation-group" aria-label={t('projects')}>
+            {pinnedProjects.map((project) => {
+              const projectConversations = conversations
+                .filter((conversation) => conversation.projectId === project.id)
+                .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+              return (
+                <div key={project.id}>
+                  <div className="areqa-conversation-item areqa-conversation-project-item"
+                    onClick={() => openProjectPage(project.id)}>
+                    <span className="areqa-conversation-item-icon"><FolderClosed size={16} aria-hidden="true" /></span>
+                    <div className="areqa-conversation-item-content">
+                      <span className="areqa-conversation-item-title"><span>{project.name}</span></span>
+                    </div>
+                  </div>
+                  {projectConversations.slice(0, PINNED_PROJECT_PREVIEW_COUNT).map((conversation) => (
+                    <div key={conversation.id}
+                      className={conversation.id === activeId
+                        ? 'areqa-conversation-item areqa-conversation-project-child areqa-conversation-item-active'
+                        : 'areqa-conversation-item areqa-conversation-project-child'}
+                      onClick={() => { void handleSelect(conversation.id); }}>
+                      <div className="areqa-conversation-item-content">
+                        <span className="areqa-conversation-item-title" title={conversation.title}>
+                          <span>{DEFAULT_CONVERSATION_TITLES.has(conversation.title) ? t('newChat') : conversation.title || t('newChat')}</span>
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  {projectConversations.length > PINNED_PROJECT_PREVIEW_COUNT && (
+                    <button type="button" className="areqa-conversation-item areqa-conversation-project-child areqa-conversation-project-more"
+                      onClick={() => openProjectPage(project.id)}>
+                      {t('projectViewAll')}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </section>
+        )}
         {isLoading && conversations.length === 0 ? (
           <div className="areqa-conversation-loading">
             <Spin size="small" />
@@ -395,6 +479,12 @@ export function ConversationList({
                   key: `branch:${source.id}`,
                   label: menuLabel(<BranchIcon size={14} />, t('conversationBranchReturn')),
                 }] : []),
+                ...(isSignedIn && !conv.collaboration ? [
+                  { key: 'project', label: menuLabel(<FolderInput size={14} />, t('projectAddTo')) },
+                  ...(conv.projectId ? [{
+                    key: 'project-remove', label: menuLabel(<FolderMinus size={14} />, t('projectRemoveFrom')),
+                  }] : []),
+                ] : []),
                 ...(childBranches.length ? [{
                   key: 'branches',
                   label: menuLabel(<BranchIcon size={14} />, t('conversationBranches')),
@@ -419,6 +509,10 @@ export function ConversationList({
                         openRenameDialog(conv.id, displayTitle);
                       } else if (key === 'pin') {
                         togglePinned(conv.id);
+                      } else if (key === 'project') {
+                        setProjectPickerConversationId(conv.id);
+                      } else if (key === 'project-remove') {
+                        void assignProject(conv.id, null);
                       } else if (key === 'delete') {
                         void handleDelete(conv.id);
                       }
@@ -541,6 +635,23 @@ export function ConversationList({
           value={renameValue}
         />
       </Modal>
+      <ProjectPickerModal
+        open={projectPickerConversationId !== null}
+        currentProjectId={conversations.find((item) => item.id === projectPickerConversationId)?.projectId}
+        onClose={() => setProjectPickerConversationId(null)}
+        onPick={async (projectId) => {
+          if (projectPickerConversationId) await assignProject(projectPickerConversationId, projectId);
+        }}
+      />
+      <ProjectNameModal
+        open={createProjectOpen}
+        title={t('projectCreate')}
+        onClose={() => setCreateProjectOpen(false)}
+        onSubmit={async (name) => {
+          const project = await useProjectStore.getState().create(name);
+          openProjectPage(project.id);
+        }}
+      />
     </div>
   );
 }

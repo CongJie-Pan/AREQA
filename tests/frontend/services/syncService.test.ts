@@ -1171,3 +1171,66 @@ describe('syncService - Topic Finder conversation kind', () => {
     expect(merged?.kind).toBe('research_coach');
   });
 });
+
+describe('syncService - conversation project link', () => {
+  const at = new Date('2026-11-25T00:00:00.000Z');
+  const base: Conversation = {
+    id: 'conv_project', userId: 'user_123', title: 'Diary entry', createdAt: at, updatedAt: at,
+    messageCount: 0, lastMessagePreview: '',
+  };
+  const PROJECT = '7a1c2b6e-1d2a-4c3b-9a8e-123456789abc';
+
+  beforeEach(async () => {
+    mockSupabaseResponse = { data: [], error: null };
+    mockSupabaseMsgResponse = { data: [], error: null };
+    mockSupabaseNoteResponse = { data: [], error: null };
+    mockConversationUpsert.mockReset();
+    mockConversationUpsert.mockResolvedValue({ error: null });
+    await db.open();
+    await db.conversations.clear();
+    await db.conversationSyncQueue.clear();
+  });
+
+  afterEach(async () => {
+    vi.clearAllMocks();
+    await db.conversations.clear();
+  });
+
+  it('sends project_id only for conversations that were ever in a project', async () => {
+    await syncService.pushConversation({ ...base, projectId: PROJECT });
+    await syncService.pushConversation({ ...base, id: 'conv_removed', projectId: null });
+    await syncService.pushConversation({ ...base, id: 'conv_plain' });
+
+    expect(mockConversationUpsert.mock.calls[0][0]).toHaveProperty('project_id', PROJECT);
+    expect(mockConversationUpsert.mock.calls[1][0]).toHaveProperty('project_id', null);
+    expect(mockConversationUpsert.mock.calls[2][0]).not.toHaveProperty('project_id');
+  });
+
+  it('defers the link when the column is missing or the project row has not synced yet', async () => {
+    for (const error of [
+      { code: 'PGRST204', message: "Could not find the 'project_id' column of 'conversations'" },
+      { code: '23503', message: 'violates foreign key constraint' },
+    ]) {
+      mockConversationUpsert.mockReset();
+      mockConversationUpsert.mockResolvedValueOnce({ error }).mockResolvedValueOnce({ error: null });
+
+      await expect(syncService.pushConversation({ ...base, projectId: PROJECT })).resolves.toBe(true);
+      expect(mockConversationUpsert.mock.calls[0][0]).toHaveProperty('project_id', PROJECT);
+      expect(mockConversationUpsert.mock.calls[1][0]).not.toHaveProperty('project_id');
+    }
+  });
+
+  it('restores the project from cloud rows and keeps a local-only link without the column', async () => {
+    await db.conversations.add({ ...base, id: 'conv_local_link', projectId: PROJECT });
+    const newer = new Date('2026-11-25T01:00:00.000Z').toISOString();
+    mockSupabaseResponse = { data: [
+      { id: 'conv_cloud', user_id: 'user_123', title: 'Cloud', project_id: PROJECT, created_at: at.toISOString(), updated_at: newer },
+      { id: 'conv_local_link', user_id: 'user_123', title: 'Renamed', created_at: at.toISOString(), updated_at: newer },
+    ], error: null };
+
+    await syncService.pullFromCloud();
+
+    expect((await db.conversations.get('conv_cloud'))?.projectId).toBe(PROJECT);
+    expect((await db.conversations.get('conv_local_link'))?.projectId).toBe(PROJECT);
+  });
+});

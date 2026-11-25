@@ -390,3 +390,65 @@ describe('ConversationList workspace switch', () => {
     expect(useConversationStore.getState().workspace).toBe('research_coach');
   });
 });
+
+describe('ConversationList projects', () => {
+  const PROJECT_ID = '7a1c2b6e-1d2a-4c3b-9a8e-123456789abc';
+  const at = new Date('2026-11-20T00:00:00.000Z');
+
+  beforeEach(async () => {
+    window.localStorage.clear();
+    const { useAuthStore } = await import('@/store/auth');
+    useAuthStore.setState({ user: { id: 'user-1' } as never });
+    const { useProjectStore } = await import('@/store/projects');
+    useProjectStore.setState({
+      projects: [{
+        id: PROJECT_ID, userId: 'user-1', name: 'Diary', instructions: '', useAccountMemory: true, isPinned: true,
+        memorySummary: null, memoryDetails: [], memoryUpdatedAt: null, createdAt: at, updatedAt: at,
+      }],
+      view: { kind: 'list' },
+      draftProjectId: null,
+    });
+    useConversationStore.setState({
+      conversations: [
+        conversation({ id: 'in-project', title: 'Friendship reflections', projectId: PROJECT_ID }),
+        conversation({ id: 'plain', title: 'Loose chat' }),
+      ],
+      activeConversationId: null,
+      isLoading: false,
+      streamingTitles: {},
+      workspace: 'chat',
+    });
+  });
+
+  it('nests project chats under a pinned project and opens its page', async () => {
+    const onSelectGumPanel = vi.fn();
+    renderConversationList({ onSelectGumPanel });
+
+    fireEvent.click(screen.getByText('Diary'));
+
+    const { useProjectStore } = await import('@/store/projects');
+    expect(useProjectStore.getState().view).toEqual({ kind: 'project', projectId: PROJECT_ID });
+    expect(useProjectStore.getState().draftProjectId).toBe(PROJECT_ID);
+    expect(onSelectGumPanel).toHaveBeenCalledWith('projects');
+    expect(screen.getAllByText('Friendship reflections').length).toBeGreaterThan(0);
+  });
+
+  it('adds a chat to a project from the row menu', async () => {
+    vi.mocked(databaseService.conversation.update).mockResolvedValue(undefined);
+    renderConversationList();
+
+    fireEvent.click(screen.getAllByTitle('Conversation menu').at(-1)!);
+    fireEvent.click(await screen.findByRole('menuitem', { name: /projectAddTo/ }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Diary' }));
+
+    await vi.waitFor(() => expect(databaseService.conversation.update).toHaveBeenCalledWith('plain', { projectId: PROJECT_ID }));
+    expect(useConversationStore.getState().conversations.find((item) => item.id === 'plain')?.projectId).toBe(PROJECT_ID);
+  });
+
+  it('offers removal only for chats that are in a project', async () => {
+    renderConversationList();
+    fireEvent.click(screen.getAllByTitle('Conversation menu').at(-1)!);
+    await screen.findByRole('menuitem', { name: /projectAddTo/ });
+    expect(screen.queryByRole('menuitem', { name: /projectRemoveFrom/ })).toBeNull();
+  });
+});
