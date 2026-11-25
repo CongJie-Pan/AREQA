@@ -1118,6 +1118,22 @@ button.areqa-topic-finder-badge {
   padding-left: 37px;
 }
 
+/* A thin guide line runs down from the project icon beside its nested chats. */
+.areqa-conversation-project-children {
+  position: relative;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 6px;
+    left: 17px;
+    width: 1px;
+    background: var(--areqa-subtle-border, var(--border));
+    pointer-events: none;
+  }
+}
+
 .areqa-conversation-project-item .areqa-conversation-item-icon {
   color: var(--foreground);
 }

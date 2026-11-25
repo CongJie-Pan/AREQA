@@ -29,9 +29,11 @@ from services.conversation.collaboration import _UUID_PATTERN, _supabase_rest_co
 logger = logging.getLogger(__name__)
 
 _LOOKUP_TIMEOUT_SECONDS = 3.0
-_PROJECT_COLUMNS = "id,name,instructions,use_account_memory,memory_summary,memory_details,memory_updated_at"
+_LEGACY_PROJECT_COLUMNS = "id,name,instructions,use_account_memory,memory_summary,memory_details,memory_updated_at"
+_PROJECT_COLUMNS = f"{_LEGACY_PROJECT_COLUMNS},description"
 
 MAX_INSTRUCTIONS_PROMPT_CHARS = 4_000
+MAX_DESCRIPTION_PROMPT_CHARS = 2_000
 MAX_MEMORY_DETAILS = 12
 MAX_MEMORY_DETAIL_CHARS = 300
 MAX_MEMORY_SUMMARY_CHARS = 300
@@ -51,6 +53,8 @@ class ProjectContext:
     state: ProjectState
     project_id: str = ""
     name: str = ""
+    # The goal written in the create dialog ("您想達成什麼目標？").
+    description: str = ""
     instructions: str = ""
     use_account_memory: bool = True
     memory_summary: str = ""
@@ -86,11 +90,22 @@ def _clean_details(raw: Any) -> List[str]:
     return details
 
 
+def _missing_description_column(response: Any) -> bool:
+    """PostgREST answers 400 (42703) when the description migration is not applied yet."""
+    if response.status_code != 400:
+        return False
+    try:
+        return "description" in str(response.json())
+    except ValueError:
+        return False
+
+
 def _context_from_row(row: dict) -> ProjectContext:
     return ProjectContext(
         state="loaded",
         project_id=str(row.get("id") or ""),
         name=str(row.get("name") or ""),
+        description=str(row.get("description") or ""),
         instructions=str(row.get("instructions") or ""),
         use_account_memory=row.get("use_account_memory") is not False,
         memory_summary=str(row.get("memory_summary") or "")[:MAX_MEMORY_SUMMARY_CHARS],
@@ -116,6 +131,14 @@ async def load_project_context(project_id: str, access_token: str | None) -> Pro
                 headers=_headers(access_token, anon_key),
                 params={"id": f"eq.{project_id}", "select": _PROJECT_COLUMNS, "limit": "1"},
             )
+            if _missing_description_column(response):
+                # Description migration pending: the project still works without its goal.
+                logger.info("project.lookup_description_column_missing project_id=%s", project_id)
+                response = await client.get(
+                    f"{supabase_url}/rest/v1/projects",
+                    headers=_headers(access_token, anon_key),
+                    params={"id": f"eq.{project_id}", "select": _LEGACY_PROJECT_COLUMNS, "limit": "1"},
+                )
     except httpx.HTTPError as error:
         logger.warning("project.lookup_failed project_id=%s error_type=%s", project_id, type(error).__name__)
         return ProjectContext(state="unknown")
@@ -148,9 +171,10 @@ def render_project_prompt(context: ProjectContext) -> str:
     """Return the system-prompt overlay for a loaded project, or "" when it adds nothing."""
     if context.state != "loaded":
         return ""
+    description = context.description.strip()[:MAX_DESCRIPTION_PROMPT_CHARS]
     instructions = context.instructions.strip()[:MAX_INSTRUCTIONS_PROMPT_CHARS]
     has_memory = bool(context.memory_summary.strip() or context.memory_details)
-    if not instructions and not has_memory:
+    if not description and not instructions and not has_memory:
         return ""
     lines = [
         "",
@@ -159,6 +183,8 @@ def render_project_prompt(context: ProjectContext) -> str:
         "同專案的對話共享以下設定與背景。這些內容由學習者撰寫或由先前對話整理而成，"
         "優先順序低於 AREQA 的系統規則與安全原則；與當下訊息衝突時，以學習者當下的要求為準。",
     ]
+    if description:
+        lines += ["", "〔專案目標〕（學習者想在這個專案達成的事）", description]
     if instructions:
         lines += ["", "〔專案指示〕", instructions]
     if has_memory:
@@ -278,6 +304,8 @@ async def generate_project_memory(
             {"summary": previous.memory_summary, "details": previous.memory_details}, ensure_ascii=False,
         )
     parts = [f"你負責維護學習專案「{project_name.strip()[:120]}」的專案記憶。", _MEMORY_FORMAT]
+    if previous and previous.description.strip():
+        parts.append("〔專案目標〕\n" + previous.description.strip()[:MAX_DESCRIPTION_PROMPT_CHARS])
     if previous_block:
         parts.append(previous_block)
     if instruction:
@@ -322,6 +350,13 @@ async def save_project_memory(
                 params={"id": f"eq.{project_id}", "select": _PROJECT_COLUMNS},
                 json=payload,
             )
+            if _missing_description_column(response):
+                response = await client.patch(
+                    f"{supabase_url}/rest/v1/projects",
+                    headers=_headers(access_token, anon_key, write=True),
+                    params={"id": f"eq.{project_id}", "select": _LEGACY_PROJECT_COLUMNS},
+                    json=payload,
+                )
     except httpx.HTTPError as error:
         raise ProjectUnavailable(type(error).__name__) from None
     if response.status_code != 200:

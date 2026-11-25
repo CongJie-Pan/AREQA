@@ -6,16 +6,18 @@
  * memory). Scheduling and background files are intentionally left out.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { App, Dropdown, Input, Modal, Tooltip } from 'antd';
-import { ArrowUpDown, BookText, Brain, ChevronDown, Pin, Search } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { App, Dropdown, Input, Tooltip } from 'antd';
+import { ArrowUpDown, BookText, Brain, ChevronDown, MoreHorizontal, Pin, Search } from 'lucide-react';
 import type { Conversation, Project } from '@/database/schema';
 import { useProjectStore } from '@/store/projects';
 import { useConversationStore } from '@/store/conversation';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { ChatInput, type ChatInputProps } from '@/components/ChatInput';
-import { MAX_PROJECT_INSTRUCTIONS_CHARS, MAX_PROJECT_NAME_CHARS } from '@/services/projects';
 import { ProjectMemoryModal } from './ProjectMemoryModal';
+import { ProjectFormModal } from './ProjectFormModal';
+import { useConversationMenu } from '@/components/ConversationMenu/useConversationMenu';
+import { ProjectInstructionsModal } from './ProjectInstructionsModal';
 import { ProjectIcon } from './ProjectIcon';
 import { formatProjectTime } from './format';
 import styles from './Projects.module.css';
@@ -29,47 +31,6 @@ export interface ProjectsPanelProps {
   onOpenAccountMemory: () => void;
   /** Composer is busy (another reply is streaming). */
   composerDisabled?: boolean;
-}
-
-/** Ask for a project name; used for create and rename. */
-export function ProjectNameModal({ open, initialName = '', title, onClose, onSubmit }: {
-  open: boolean;
-  initialName?: string;
-  title: string;
-  onClose: () => void;
-  onSubmit: (name: string) => Promise<void>;
-}) {
-  const { t } = useUserPreferences();
-  const { message } = App.useApp();
-  const [name, setName] = useState(initialName);
-  const [saving, setSaving] = useState(false);
-  // Reset as soon as the dialog opens, not after its animation, so early typing is kept.
-  useEffect(() => {
-    if (open) setName(initialName);
-  }, [initialName, open]);
-  const submit = async () => {
-    if (!name.trim()) {
-      message.warning(t('projectNameRequired'));
-      return;
-    }
-    setSaving(true);
-    try {
-      await onSubmit(name.trim());
-      onClose();
-    } catch {
-      message.error(t('projectSaveFailed'));
-    } finally {
-      setSaving(false);
-    }
-  };
-  return (
-    <Modal open={open} title={title} onCancel={onClose} onOk={() => { void submit(); }} okText={t('save')}
-      confirmLoading={saving} okButtonProps={{ disabled: !name.trim() }} destroyOnHidden>
-      <Input autoFocus maxLength={MAX_PROJECT_NAME_CHARS} value={name} placeholder={t('projectNamePlaceholder')}
-        aria-label={t('projectNamePlaceholder')}
-        onChange={(event) => setName(event.target.value)} onPressEnter={() => { void submit(); }} />
-    </Modal>
-  );
 }
 
 export function ProjectsPanel(props: ProjectsPanelProps) {
@@ -166,9 +127,9 @@ function ProjectList() {
           ))}
         </div>
       )}
-      <ProjectNameModal open={createOpen} title={t('projectCreate')} onClose={() => setCreateOpen(false)}
-        onSubmit={async (name) => {
-          const project = await useProjectStore.getState().create(name);
+      <ProjectFormModal open={createOpen} onClose={() => setCreateOpen(false)}
+        onSubmit={async ({ name, description }) => {
+          const project = await useProjectStore.getState().create(name, description);
           useProjectStore.getState().showProject(project.id);
         }} />
     </>
@@ -177,7 +138,7 @@ function ProjectList() {
 
 function ProjectDetail({ project, onStartChat, onOpenConversation, onOpenAccountMemory, composerDisabled }:
   ProjectsPanelProps & { project: Project }) {
-  const { t, language } = useUserPreferences();
+  const { t } = useUserPreferences();
   const { message, modal } = App.useApp();
   const allConversations = useConversationStore((state) => state.conversations);
   const [chatQuery, setChatQuery] = useState('');
@@ -190,22 +151,10 @@ function ProjectDetail({ project, onStartChat, onOpenConversation, onOpenAccount
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   }, [allConversations, chatQuery, project.id]);
   const [instructionsOpen, setInstructionsOpen] = useState(false);
-  const [instructionsDraft, setInstructionsDraft] = useState(project.instructions);
-  const [savingInstructions, setSavingInstructions] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const conversationMenu = useConversationMenu({ closeMenu: () => setOpenMenuId(null) });
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
-
-  const saveInstructions = async () => {
-    setSavingInstructions(true);
-    try {
-      await useProjectStore.getState().update(project.id, { instructions: instructionsDraft.trim() });
-      setInstructionsOpen(false);
-    } catch {
-      message.error(t('projectSaveFailed'));
-    } finally {
-      setSavingInstructions(false);
-    }
-  };
 
   const togglePin = async () => {
     try {
@@ -235,7 +184,7 @@ function ProjectDetail({ project, onStartChat, onOpenConversation, onOpenAccount
           <span className={styles.breadcrumbSeparator} aria-hidden="true">/</span>
           <Dropdown trigger={['click']} menu={{
             items: [
-              { key: 'rename', label: t('rename') },
+              { key: 'rename', label: t('projectEditDetails') },
               { key: 'pin', label: t(project.isPinned ? 'projectUnpin' : 'projectPin') },
               { type: 'divider' },
               { key: 'delete', danger: true, label: t('delete') },
@@ -269,9 +218,11 @@ function ProjectDetail({ project, onStartChat, onOpenConversation, onOpenAccount
       </header>
 
       <div className={styles.inner}>
+        {/* Title spans both columns so the composer and the side rows start level. */}
+        <h1 className={`${styles.title} ${styles.detailTitle}`}>{project.name}</h1>
+        {project.description && <p className={styles.description}>{project.description}</p>}
         <div className={styles.detailLayout}>
           <div>
-            <h1 className={`${styles.title} ${styles.detailTitle}`}>{project.name}</h1>
             <div className={styles.composer}>
               <ChatInput
                 key={project.id}
@@ -289,24 +240,20 @@ function ProjectDetail({ project, onStartChat, onOpenConversation, onOpenAccount
             {conversations.length === 0 ? (
               <p className={styles.muted}>{t('projectNoConversations')}</p>
             ) : conversations.map((conversation) => (
-              <button key={conversation.id} type="button" className={styles.conversationRow}
-                data-project-chat-row=""
-                onClick={() => onOpenConversation(conversation.id)}>
-                <span className={styles.conversationTitle}>
-                  {DEFAULT_CONVERSATION_TITLES.has(conversation.title) ? t('newChat') : conversation.title || t('newChat')}
-                </span>
-                <span className={styles.cardTime}>{formatProjectTime(new Date(conversation.updatedAt), language)}</span>
-              </button>
+              <ProjectChatRow key={conversation.id} conversation={conversation} menu={conversationMenu}
+                open={openMenuId === conversation.id}
+                onOpenChange={(open) => {
+                  if (!open) conversationMenu.resetProjectQuery();
+                  setOpenMenuId((current) => (open ? conversation.id : current === conversation.id ? null : current));
+                }}
+                onSelect={() => onOpenConversation(conversation.id)} />
             ))}
           </div>
           <aside className={styles.side}>
             <div className={styles.sideRow}>
               <BookText size={20} aria-hidden="true" />
               <span className={styles.sideLabel}>{t('projectInstructions')}</span>
-              <button type="button" className={styles.linkButton} onClick={() => {
-                setInstructionsDraft(project.instructions);
-                setInstructionsOpen(true);
-              }}>
+              <button type="button" className={styles.linkButton} onClick={() => setInstructionsOpen(true)}>
                 {t(project.instructions ? 'projectEdit' : 'projectAdd')}
               </button>
             </div>
@@ -323,18 +270,59 @@ function ProjectDetail({ project, onStartChat, onOpenConversation, onOpenAccount
         </div>
       </div>
 
-      <Modal open={instructionsOpen} title={t('projectInstructions')} onCancel={() => setInstructionsOpen(false)}
-        onOk={() => { void saveInstructions(); }} okText={t('save')} confirmLoading={savingInstructions} destroyOnHidden>
-        <p className={styles.muted}>{t('projectInstructionsHint')}</p>
-        <Input.TextArea autoFocus value={instructionsDraft} maxLength={MAX_PROJECT_INSTRUCTIONS_CHARS} showCount
-          autoSize={{ minRows: 6, maxRows: 16 }} placeholder={t('projectInstructionsPlaceholder')}
-          aria-label={t('projectInstructions')} onChange={(event) => setInstructionsDraft(event.target.value)} />
-      </Modal>
+      {conversationMenu.dialogs}
+      <ProjectInstructionsModal project={project} open={instructionsOpen} onClose={() => setInstructionsOpen(false)} />
       <ProjectMemoryModal project={project} open={memoryOpen} onClose={() => setMemoryOpen(false)}
         onOpenAccountMemory={onOpenAccountMemory} />
-      <ProjectNameModal open={renameOpen} initialName={project.name} title={t('rename')}
+      <ProjectFormModal open={renameOpen} mode="edit"
+        initialValues={{ name: project.name, description: project.description ?? '' }}
         onClose={() => setRenameOpen(false)}
-        onSubmit={async (name) => { await useProjectStore.getState().update(project.id, { name }); }} />
+        onSubmit={async (values) => { await useProjectStore.getState().update(project.id, values); }} />
     </>
+  );
+}
+
+/**
+ * One chat in the project's recents. Hover (or an open menu) gives the row a
+ * rounded highlight and swaps the time for a "⋯" button with the chat menu.
+ */
+function ProjectChatRow({ conversation, menu, open, onOpenChange, onSelect }: {
+  conversation: Conversation;
+  menu: ReturnType<typeof useConversationMenu>;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSelect: () => void;
+}) {
+  const { t, language } = useUserPreferences();
+  const title = DEFAULT_CONVERSATION_TITLES.has(conversation.title) ? t('newChat') : conversation.title || t('newChat');
+  return (
+    <div className={styles.conversationRow} data-project-chat-row="" data-menu-open={open}>
+      <button type="button" className={styles.conversationOpen} onClick={onSelect}>
+        <span className={styles.conversationTitle}>{title}</span>
+        <span className={`${styles.cardTime} ${styles.conversationTime}`}>
+          {formatProjectTime(new Date(conversation.updatedAt), language)}
+        </span>
+      </button>
+      <Dropdown
+        open={open}
+        onOpenChange={onOpenChange}
+        trigger={['click']}
+        placement="bottomRight"
+        menu={{
+          items: menu.itemsFor(conversation),
+          onClick: ({ key, domEvent }) => {
+            domEvent.stopPropagation();
+            if (key === 'project-search') return; // Clicking the search field keeps the menu open.
+            onOpenChange(false);
+            menu.handleKey(conversation, key, title);
+          },
+        }}
+      >
+        <button type="button" className={styles.conversationMenuButton} aria-label={t('conversationMenu')}
+          title={t('conversationMenu')} aria-haspopup="menu" aria-expanded={open}>
+          <MoreHorizontal size={18} aria-hidden="true" />
+        </button>
+      </Dropdown>
+    </div>
   );
 }

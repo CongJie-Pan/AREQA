@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { db, getCurrentUserId } from '@/database/db';
 import { conversationRepo } from '@/database/repositories/conversationRepo';
 import type { Project } from '@/database/schema';
-import { projectService } from '@/services/projects';
+import { projectFromCloud, projectService } from '@/services/projects';
 import { syncService } from '@/services/syncService';
 import { authenticatedFetch } from '@/services/authenticatedFetch';
 import { useProjectStore } from '@/store/projects';
@@ -156,5 +156,43 @@ describe('draft project for new conversations', () => {
     useProjectStore.getState().showProject('7a1c2b6e-1d2a-4c3b-9a8e-123456789abc');
     useProjectStore.getState().showList();
     expect(useProjectStore.getState().takeDraftProjectId()).toBeNull();
+  });
+});
+
+describe('project goal (description)', () => {
+  beforeEach(async () => {
+    vi.resetAllMocks();
+    vi.mocked(getCurrentUserId).mockReturnValue(USER);
+    vi.mocked(syncService.pushConversation).mockResolvedValue(true);
+    supabaseState.upsert.mockResolvedValue({ error: null });
+    await db.open();
+    await Promise.all([db.projects.clear(), db.conversations.clear()]);
+  });
+
+  it('creates with a trimmed goal and pushes it', async () => {
+    const created = await projectService.create('Thesis', '  Finish chapter two  ');
+    expect(created.description).toBe('Finish chapter two');
+    await vi.waitFor(() => expect(supabaseState.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ id: created.id, description: 'Finish chapter two' })));
+  });
+
+  it('keeps syncing without the goal when the description column is not migrated', async () => {
+    supabaseState.upsert
+      .mockResolvedValueOnce({ error: { code: 'PGRST204', message: "Could not find the 'description' column of 'projects'" } })
+      .mockResolvedValueOnce({ error: null });
+    const created = await projectService.create('Thesis', 'Goal');
+
+    await vi.waitFor(async () => expect((await db.projects.get(created.id))?.syncPending).toBe(false));
+    expect(supabaseState.upsert.mock.calls[1][0]).not.toHaveProperty('description');
+    expect((await db.projects.get(created.id))?.description).toBe('Goal');
+  });
+
+  it('older cloud rows without a goal read as empty', () => {
+    const value = projectFromCloud({
+      id: 'p', user_id: USER, name: 'Old', instructions: null, use_account_memory: null, is_pinned: null,
+      memory_summary: null, memory_details: null, memory_updated_at: null,
+      created_at: '2026-11-20T00:00:00Z', updated_at: '2026-11-20T00:00:00Z',
+    });
+    expect(value.description).toBe('');
   });
 });

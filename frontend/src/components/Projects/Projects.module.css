@@ -227,6 +227,16 @@
   font-size: 32px;
 }
 
+/* The project goal sits under the title when the learner wrote one. */
+.description {
+  max-width: 760px;
+  margin: -16px 0 28px;
+  color: var(--muted-foreground);
+  font-size: 15px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
 /* The composer wrapper pads its box; pull it out so the box lines up with the title. */
 .composer {
   margin: 0 -36px 56px;
@@ -239,27 +249,64 @@
   font-weight: 400;
 }
 
+/* Recent chats: no rules between rows; hover gives a rounded highlight and swaps the time for "⋯". */
 .conversationRow {
+  position: relative;
   display: flex;
+  align-items: center;
+  margin: 0 -16px;
+  border-radius: 12px;
+}
+
+.conversationRow:hover,
+.conversationRow:focus-within,
+.conversationRow[data-menu-open='true'] {
+  background: var(--areqa-account-hover, var(--muted));
+}
+
+.conversationOpen {
+  display: flex;
+  flex: 1;
+  min-width: 0;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  width: 100%;
-  padding: 20px 0;
+  padding: 20px 16px;
   border: 0;
-  border-bottom: 1px solid var(--areqa-subtle-border, var(--border));
   background: transparent;
   color: inherit;
   text-align: left;
   cursor: pointer;
 }
 
-.conversationRow:last-child {
-  border-bottom: 0;
+.conversationRow:hover .conversationTime,
+.conversationRow:focus-within .conversationTime,
+.conversationRow[data-menu-open='true'] .conversationTime {
+  visibility: hidden;
 }
 
-.conversationRow:hover .conversationTitle {
-  text-decoration: underline;
+.conversationMenuButton {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--background);
+  color: var(--foreground);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(-50%);
+}
+
+.conversationRow:hover .conversationMenuButton,
+.conversationRow:focus-within .conversationMenuButton,
+.conversationRow[data-menu-open='true'] .conversationMenuButton {
+  opacity: 1;
 }
 
 .conversationTitle {
@@ -269,11 +316,95 @@
   white-space: nowrap;
 }
 
-/* Right column starts level with the composer, below the title. */
 .side {
   display: flex;
   flex-direction: column;
-  padding-top: 76px;
+}
+
+/* The first side row sits level with the composer box. */
+.side > .sideRow:first-child {
+  padding-top: 12px;
+}
+
+/* Create / edit project dialog (filled fields, grey Cancel, white Create). */
+.formModal :global(.ant-modal-content) {
+  padding: 24px;
+  border-radius: 20px;
+}
+
+.formModal :global(.ant-modal-title) {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  padding-top: 12px;
+}
+
+.formField {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.formLabel {
+  font-size: 16px;
+}
+
+.formField :global(.ant-input) {
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 15px;
+}
+
+/* Project instructions dialog: intro line and a tall filled text area. */
+.instructionsIntro {
+  margin: 4px 0 20px;
+  color: var(--muted-foreground);
+  font-size: 15px;
+}
+
+.instructionsArea {
+  display: block;
+  width: 100%;
+  height: 400px;
+  padding: 14px 16px;
+  border: 0;
+  border-radius: 12px;
+  outline: none;
+  background: var(--areqa-account-hover, var(--muted));
+  color: var(--foreground);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.6;
+  resize: none;
+}
+
+.instructionsArea::placeholder {
+  color: var(--muted-foreground);
+}
+
+.instructionsArea:focus-visible {
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+.formFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 20px;
+}
+
+.formFooter .primaryButton {
+  margin-left: 0;
+}
+
+.primaryButton:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .sideRow {

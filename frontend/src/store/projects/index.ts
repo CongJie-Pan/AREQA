@@ -22,7 +22,7 @@ interface ProjectsState {
   draftProjectId: string | null;
   load: (userId: string) => Promise<void>;
   reset: () => void;
-  create: (name: string) => Promise<Project>;
+  create: (name: string, description?: string) => Promise<Project>;
   update: (id: string, patch: ProjectPatch) => Promise<Project>;
   remove: (id: string) => Promise<void>;
   clearMemory: (id: string) => Promise<Project>;
@@ -60,8 +60,8 @@ export const useProjectStore = create<ProjectsState>((set, get) => ({
 
   reset: () => set({ projects: [], loadedUserId: null, view: { kind: 'list' }, draftProjectId: null }),
 
-  create: async (name) => {
-    const project = await projectService.create(name);
+  create: async (name, description) => {
+    const project = await projectService.create(name, description);
     set((state) => ({ projects: replaceProject(state.projects, project) }));
     return project;
   },

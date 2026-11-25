@@ -303,6 +303,15 @@ export type TranslationKey =
   | 'projectDeleteConfirm'
   | 'projectSaveFailed'
   | 'projectSignInRequired'
+  | 'projectChange'
+  | 'projectInstructionsTitle'
+  | 'projectInstructionsIntro'
+  | 'projectInstructionsSave'
+  | 'projectNameLabel'
+  | 'projectGoalLabel'
+  | 'projectGoalPlaceholder'
+  | 'projectEditDetails'
+  | 'projectEditTitle'
   | 'projectMenu'
   | 'projectPin'
   | 'projectUnpin'
@@ -773,7 +782,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     projects: "專案",
     projectCreate: "建立專案",
     projectNew: "新增專案",
-    projectNamePlaceholder: "專案名稱",
+    projectNamePlaceholder: "為您的專案命名",
     projectNameRequired: "請輸入專案名稱",
     projectSearchPlaceholder: "搜尋專案",
     projectSortRecent: "依最近活動排序",
@@ -785,7 +794,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     projectViewAll: "檢視全部",
     projectInstructions: "指示",
     projectInstructionsHint: "這個專案中的每個對話都會遵循這些指示。",
-    projectInstructionsPlaceholder: "例如：用繁體中文回答，先給重點再給細節。",
+    projectInstructionsPlaceholder: "遇到複雜問題時，請逐步思考並展示推理過程。請使用具體範例。",
     projectAdd: "新增",
     projectEdit: "編輯",
     projectView: "檢視",
@@ -805,7 +814,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     projectUseAccountMemoryHint: "讓 AREQA 在這個專案和專案外的對話之間共享記憶。",
     projectViewAccountMemory: "檢視帳號記憶",
     projectAddTo: "加入專案",
-    projectRemoveFrom: "移出專案",
+    projectRemoveFrom: "從專案中移除",
     projectSearchOrCreate: "搜尋或建立專案",
     projectCreateNamed: "建立「{name}」",
     projectAddedTo: "已加入「{name}」",
@@ -813,6 +822,15 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     projectDeleteConfirm: "刪除專案「{name}」？裡面的對話會保留，只是不再屬於這個專案。",
     projectSaveFailed: "專案儲存失敗，請稍後再試",
     projectSignInRequired: "登入後即可使用專案",
+    projectChange: "更換專案",
+    projectInstructionsTitle: "設定專案指示",
+    projectInstructionsIntro: "向 AREQA 提供與「{name}」中工作階段相關的指示與資訊。這些指示只會套用在這個專案的對話中。",
+    projectInstructionsSave: "儲存指示",
+    projectNameLabel: "您正在進行什麼工作？",
+    projectGoalLabel: "您想達成什麼目標？",
+    projectGoalPlaceholder: "描述您的專案、目標、主題等...",
+    projectEditDetails: "編輯詳細資料",
+    projectEditTitle: "編輯專案",
     projectMenu: "專案選單",
     projectPin: "釘選",
     projectUnpin: "取消釘選",
@@ -1257,7 +1275,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     projects: "项目",
     projectCreate: "创建项目",
     projectNew: "新建项目",
-    projectNamePlaceholder: "项目名称",
+    projectNamePlaceholder: "为你的项目命名",
     projectNameRequired: "请输入项目名称",
     projectSearchPlaceholder: "搜索项目",
     projectSortRecent: "按最近活动排序",
@@ -1269,7 +1287,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     projectViewAll: "查看全部",
     projectInstructions: "指示",
     projectInstructionsHint: "这个项目中的每个对话都会遵循这些指示。",
-    projectInstructionsPlaceholder: "例如：用简体中文回答，先给重点再给细节。",
+    projectInstructionsPlaceholder: "遇到复杂问题时，请逐步思考并展示推理过程。请使用具体示例。",
     projectAdd: "添加",
     projectEdit: "编辑",
     projectView: "查看",
@@ -1289,7 +1307,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     projectUseAccountMemoryHint: "让 AREQA 在这个项目和项目外的对话之间共享记忆。",
     projectViewAccountMemory: "查看账号记忆",
     projectAddTo: "加入项目",
-    projectRemoveFrom: "移出项目",
+    projectRemoveFrom: "从项目中移除",
     projectSearchOrCreate: "搜索或创建项目",
     projectCreateNamed: "创建“{name}”",
     projectAddedTo: "已加入“{name}”",
@@ -1297,6 +1315,15 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     projectDeleteConfirm: "删除项目“{name}”？里面的对话会保留，只是不再属于这个项目。",
     projectSaveFailed: "项目保存失败，请稍后再试",
     projectSignInRequired: "登录后即可使用项目",
+    projectChange: "更换项目",
+    projectInstructionsTitle: "设置项目指示",
+    projectInstructionsIntro: "向 AREQA 提供与“{name}”中工作阶段相关的指示与信息。这些指示只会应用在这个项目的对话中。",
+    projectInstructionsSave: "保存指示",
+    projectNameLabel: "你正在进行什么工作？",
+    projectGoalLabel: "你想达成什么目标？",
+    projectGoalPlaceholder: "描述你的项目、目标、主题等...",
+    projectEditDetails: "编辑详细信息",
+    projectEditTitle: "编辑项目",
     projectMenu: "项目菜单",
     projectPin: "置顶",
     projectUnpin: "取消置顶",
@@ -1741,7 +1768,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     projects: "Projects",
     projectCreate: "Create project",
     projectNew: "New project",
-    projectNamePlaceholder: "Project name",
+    projectNamePlaceholder: "Name your project",
     projectNameRequired: "Enter a project name",
     projectSearchPlaceholder: "Search projects",
     projectSortRecent: "Sort by recent activity",
@@ -1753,7 +1780,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     projectViewAll: "View all",
     projectInstructions: "Instructions",
     projectInstructionsHint: "Every chat in this project follows these instructions.",
-    projectInstructionsPlaceholder: "e.g. Answer in English, key points first.",
+    projectInstructionsPlaceholder: "Think step by step on complex problems and show your reasoning. Use concrete examples.",
     projectAdd: "Add",
     projectEdit: "Edit",
     projectView: "View",
@@ -1781,6 +1808,15 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     projectDeleteConfirm: "Delete \"{name}\"? Its chats are kept; they just leave the project.",
     projectSaveFailed: "Could not save the project. Try again later.",
     projectSignInRequired: "Sign in to use projects",
+    projectChange: "Change project",
+    projectInstructionsTitle: "Set project instructions",
+    projectInstructionsIntro: "Give AREQA instructions and information for sessions in \"{name}\". They apply only to chats in this project.",
+    projectInstructionsSave: "Save instructions",
+    projectNameLabel: "What are you working on?",
+    projectGoalLabel: "What are you trying to achieve?",
+    projectGoalPlaceholder: "Describe your project, goals, subject, etc...",
+    projectEditDetails: "Edit details",
+    projectEditTitle: "Edit project",
     projectMenu: "Project menu",
     projectPin: "Pin",
     projectUnpin: "Unpin",

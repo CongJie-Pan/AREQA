@@ -402,3 +402,52 @@ async def test_memory_routes_reject_malformed_project_ids():
     finally:
         app.dependency_overrides.pop(get_current_user, None)
     assert response.status_code == 400
+
+
+# --- Project goal (create dialog "您想達成什麼目標？") ------------------------------------------
+
+
+def test_render_includes_the_goal_before_instructions_and_alone():
+    overlay = render_project_prompt(ProjectContext(
+        state="loaded", name="Thesis", description="Finish the literature review by March", instructions="Be brief.",
+    ))
+    assert "〔專案目標〕" in overlay
+    assert overlay.index("Finish the literature review") < overlay.index("Be brief.")
+    assert "Finish" in render_project_prompt(ProjectContext(state="loaded", name="T", description="Finish"))
+
+
+@pytest.mark.asyncio
+async def test_lookup_reads_the_goal(supabase_env):
+    client = _FakeAsyncClient([_response(200, [_row(description="Write the thesis")])])
+    with patch.object(projects.httpx, "AsyncClient", return_value=client):
+        context = await load_project_context(PROJECT_ID, "jwt")
+    assert context.description == "Write the thesis"
+    assert "description" in client.calls[0]["params"]["select"]
+
+
+@pytest.mark.asyncio
+async def test_lookup_falls_back_when_the_goal_column_is_not_migrated(supabase_env):
+    missing = _response(400, {"code": "42703", "message": "column projects.description does not exist"})
+    client = _FakeAsyncClient([missing, _response(200, [_row()])])
+    with patch.object(projects.httpx, "AsyncClient", return_value=client):
+        context = await load_project_context(PROJECT_ID, "jwt")
+    assert context.state == "loaded"
+    assert context.description == ""
+    assert "description" not in client.calls[1]["params"]["select"]
+
+
+@pytest.mark.asyncio
+async def test_other_bad_requests_are_not_retried(supabase_env):
+    client = _FakeAsyncClient([_response(400, {"message": "bad filter"})])
+    with patch.object(projects.httpx, "AsyncClient", return_value=client):
+        assert (await load_project_context(PROJECT_ID, "jwt")).state == "unknown"
+    assert len(client.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_memory_generation_knows_the_goal():
+    completion = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content='{"summary": "s", "details": []}'))])
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=AsyncMock(return_value=completion))))
+    await generate_project_memory(client, "m", project_name="Thesis", transcript="t",
+                                  previous=ProjectContext(state="loaded", description="Finish chapter two"))
+    assert "Finish chapter two" in client.chat.completions.create.call_args.kwargs["messages"][0]["content"]

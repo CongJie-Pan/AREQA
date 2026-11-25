@@ -164,18 +164,24 @@ describe('Projects flow', () => {
     fireEvent.click(screen.getByRole('button', { name: '專案' }));
     expect(await screen.findByRole('heading', { name: '專案' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '新增專案' }));
-    fireEvent.change(await screen.findByLabelText('專案名稱'), { target: { value: 'Diary' } });
-    fireEvent.click(screen.getByRole('button', { name: /儲\s*存/ }));
+    // The create dialog asks what you work on (name) and what you want to achieve (goal).
+    const createDialog = await screen.findByRole('dialog', { name: '建立專案' });
+    fireEvent.change(within(createDialog).getByLabelText('您正在進行什麼工作？'), { target: { value: 'Diary' } });
+    fireEvent.change(within(createDialog).getByLabelText('您想達成什麼目標？'), { target: { value: '每天記錄心情' } });
+    fireEvent.click(within(createDialog).getByRole('button', { name: '建立專案' }));
     expect(await screen.findByRole('heading', { name: 'Diary' })).toBeInTheDocument();
     const project = useProjectStore.getState().projects[0];
-    await waitFor(() => expect(cloud.upserts.some((row) => row.id === project.id && row.name === 'Diary')).toBe(true));
+    expect(project.description).toBe('每天記錄心情');
+    expect(screen.getByText('每天記錄心情')).toBeInTheDocument();
+    await waitFor(() => expect(cloud.upserts.some((row) => (
+      row.id === project.id && row.name === 'Diary' && row.description === '每天記錄心情'))).toBe(true));
 
     // 2. Instructions are saved locally and pushed to Supabase.
     const side = screen.getByText('指示').closest('aside') as HTMLElement;
     fireEvent.click(within(side).getByRole('button', { name: '新增' }));
-    const dialog = await screen.findByRole('dialog', { name: '指示' });
+    const dialog = await screen.findByRole('dialog', { name: '設定專案指示' });
     fireEvent.change(within(dialog).getByRole('textbox'), { target: { value: '先給重點' } });
-    fireEvent.click(screen.getAllByRole('button', { name: /儲\s*存/ }).at(-1)!);
+    fireEvent.click(within(dialog).getByRole('button', { name: '儲存指示' }));
     await waitFor(() => expect((useProjectStore.getState().projects[0]).instructions).toBe('先給重點'));
     await waitFor(() => expect(cloud.upserts.at(-1)).toMatchObject({ id: project.id, instructions: '先給重點' }));
 
@@ -220,8 +226,7 @@ describe('Projects flow', () => {
       return found!;
     });
     fireEvent.click(card);
-    await waitFor(() => expect(screen.getAllByRole('button').filter((button) => (
-      button.className.includes('conversationRow'))).length).toBe(2));
+    await waitFor(() => expect(document.querySelectorAll('[data-project-chat-row]')).toHaveLength(2));
     fireEvent.click(within(screen.getByText('記憶').closest('aside') as HTMLElement).getByRole('button', { name: '檢視' }));
     expect(await screen.findByText('碩一學生，每晚寫日記')).toBeInTheDocument();
     const refreshCalls = vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('/memory/refresh'));

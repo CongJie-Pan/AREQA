@@ -17,11 +17,13 @@ import { logger } from '@/utils/logger';
 
 export const MAX_PROJECT_NAME_CHARS = 120;
 export const MAX_PROJECT_INSTRUCTIONS_CHARS = 8000;
+export const MAX_PROJECT_DESCRIPTION_CHARS = 2000;
 
 type CloudProjectRow = {
   id: string;
   user_id: string;
   name: string;
+  description?: string | null;
   instructions: string | null;
   use_account_memory: boolean | null;
   is_pinned: boolean | null;
@@ -39,7 +41,7 @@ export interface ProjectMemoryView {
 }
 
 /** Fields the learner can change directly; memory changes go through the memory helpers. */
-export type ProjectPatch = Partial<Pick<Project, 'name' | 'instructions' | 'useAccountMemory' | 'isPinned'>>;
+export type ProjectPatch = Partial<Pick<Project, 'name' | 'description' | 'instructions' | 'useAccountMemory' | 'isPinned'>>;
 
 function cleanDetails(raw: unknown): string[] {
   return Array.isArray(raw) ? raw.filter((item): item is string => typeof item === 'string' && item.trim() !== '') : [];
@@ -50,6 +52,7 @@ export function projectFromCloud(row: CloudProjectRow): Project {
     id: row.id,
     userId: row.user_id,
     name: row.name,
+    description: row.description ?? '',
     instructions: row.instructions ?? '',
     useAccountMemory: row.use_account_memory !== false,
     isPinned: row.is_pinned === true,
@@ -66,6 +69,7 @@ function projectToCloud(project: Project): CloudProjectRow {
     id: project.id,
     user_id: project.userId,
     name: project.name,
+    description: project.description ?? '',
     instructions: project.instructions,
     use_account_memory: project.useAccountMemory,
     is_pinned: project.isPinned,
@@ -92,8 +96,21 @@ function requireUserId(): string {
  * Push one project; on success clear its pending flag and re-push conversation
  * links that were deferred because the project row did not exist in the cloud yet.
  */
+function isMissingDescriptionColumn(error: unknown): boolean {
+  const { code, message } = (error ?? {}) as { code?: string; message?: string };
+  return (code === 'PGRST204' || code === '42703') && (!message || message.includes('description'));
+}
+
 async function pushProject(project: Project): Promise<boolean> {
-  const { error } = await supabase.from('projects').upsert(projectToCloud(project));
+  const row = projectToCloud(project);
+  let { error } = await supabase.from('projects').upsert(row);
+  if (error && isMissingDescriptionColumn(error)) {
+    // Description migration pending: keep syncing the project; its goal stays local for now.
+    const { description: _deferred, ...legacy } = row;
+    void _deferred;
+    logger.warn('project_description_column_missing', { component: 'projects', projectId: project.id });
+    ({ error } = await supabase.from('projects').upsert(legacy));
+  }
   if (error) {
     logger.warn('project_push_failed', { component: 'projects', projectId: project.id, code: errorCode(error) });
     return false;
@@ -163,13 +180,14 @@ export const projectService = {
     return this.listLocal(userId);
   },
 
-  async create(name: string): Promise<Project> {
+  async create(name: string, description = ''): Promise<Project> {
     const userId = requireUserId();
     const now = new Date();
     const project: Project = {
       id: generateUUID(),
       userId,
       name: name.trim().slice(0, MAX_PROJECT_NAME_CHARS),
+      description: description.trim().slice(0, MAX_PROJECT_DESCRIPTION_CHARS),
       instructions: '',
       useAccountMemory: true,
       isPinned: false,
@@ -190,6 +208,8 @@ export const projectService = {
       ...current,
       ...patch,
       ...(patch.name !== undefined ? { name: patch.name.trim().slice(0, MAX_PROJECT_NAME_CHARS) } : {}),
+      ...(patch.description !== undefined
+        ? { description: patch.description.trim().slice(0, MAX_PROJECT_DESCRIPTION_CHARS) } : {}),
       ...(patch.instructions !== undefined
         ? { instructions: patch.instructions.slice(0, MAX_PROJECT_INSTRUCTIONS_CHARS) } : {}),
       updatedAt: new Date(),

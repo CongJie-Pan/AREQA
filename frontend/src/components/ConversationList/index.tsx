@@ -8,8 +8,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { App, Dropdown, Input, Modal, Spin, Tooltip } from 'antd';
-import type { MenuProps } from 'antd';
-import { MoreHorizontal, Pencil, Pin, PinOff, Plus, Search, ChevronRight, Trash2, PanelLeftClose, Mail as MailIcon, FolderMinus } from 'lucide-react';
+import { MessageCircle, MoreHorizontal, Pencil, PinOff, Plus, Search, ChevronRight, Trash2, PanelLeftClose, Mail as MailIcon } from 'lucide-react';
 import { BranchIcon, conversationBranchesEnabled } from '@/components/ConversationBranch/BranchIcon';
 import { useConversationStore } from '@/store/conversation';
 import { useChatStore } from '@/store/chat';
@@ -19,20 +18,19 @@ import { SidePanelType } from '@/types/panel';
 import {
   logConversationHistoryDebugEvent,
   switchConversation,
-  deleteConversation as deleteConversationService,
 } from '@/services/chat';
-import { databaseService } from '@/services/database';
 import { UserAuthUI } from '../Auth';
 import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { logger } from '@/utils/logger';
 import { conversationKindOf } from '@/utils/conversationKind';
 import { WorkspaceSwitch } from '@/components/WorkspaceSwitch';
-import { ProjectIcon, ProjectNameModal } from '@/components/Projects';
+import { menuLabel, useConversationMenu } from '@/components/ConversationMenu/useConversationMenu';
+import { usePinnedConversationStore } from '@/store/pinnedConversations';
+import { ProjectFormModal, ProjectIcon } from '@/components/Projects';
 import { useProjectStore } from '@/store/projects';
 import type { Conversation, Project } from '@/database/schema';
 import { useAuthStore } from '@/store/auth';
 
-const PINNED_CONVERSATION_IDS_KEY = 'areqa:pinned-conversation-ids';
 const LONG_PRESS_MENU_MS = 520;
 const DEFAULT_CONVERSATION_TITLES = new Set(['新對話', '新对话']);
 /** Conversations listed under a pinned project before "View all". */
@@ -73,32 +71,25 @@ export function ConversationList({
   projectsActive = false,
   activeProjectId = null,
 }: ConversationListProps) {
-  const { message: antMessageApi, modal } = App.useApp();
+  const { modal } = App.useApp();
   const { resolvedTheme, t } = useUserPreferences();
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [pinnedOpen, setPinnedOpen] = useState(false);
+  /** null until the learner toggles the group; until then it follows whether pinned projects exist. */
+  const [pinnedOpenChoice, setPinnedOpen] = useState<boolean | null>(null);
   const [recentsOpen, setRecentsOpen] = useState(true);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const [pinnedIds, setPinnedIds] = useState<string[]>([]);
-  const [renameTargetId, setRenameTargetId] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState('');
-  const [isRenaming, setIsRenaming] = useState(false);
-  const [projectQuery, setProjectQuery] = useState('');
   const [projectMenuId, setProjectMenuId] = useState<string | null>(null);
   const [renameProjectId, setRenameProjectId] = useState<string | null>(null);
-  /** Create dialog; when set from a chat menu, the new project receives that chat. */
-  const [createProject, setCreateProject] = useState<{ conversationId: string | null } | null>(null);
+  const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const isSignedIn = useAuthStore((state) => Boolean(state.user));
   const projects = useProjectStore((state) => state.projects);
   const pinnedProjects = useMemo(() => projects.filter((project) => project.isPinned), [projects]);
   const hasPinnedProjects = isSignedIn && pinnedProjects.length > 0;
-  // Pinned projects live in the Pinned group, so it opens when the first one appears.
-  useEffect(() => {
-    if (hasPinnedProjects) setPinnedOpen(true);
-  }, [hasPinnedProjects]);
+  // Pinned projects live in the Pinned group, so it starts open when there are any.
+  const pinnedOpen = pinnedOpenChoice ?? hasPinnedProjects;
 
   const conversations = useConversationStore((state) => state.conversations);
   const workspace = useConversationStore((state) => state.workspace);
@@ -136,25 +127,14 @@ export function ConversationList({
     fetchMails();
   }, [fetchMails, mailboxEnabled]);
 
+  const pinnedIds = usePinnedConversationStore((state) => state.ids);
   useEffect(() => {
-    try {
-      const storedValue = window.localStorage.getItem(PINNED_CONVERSATION_IDS_KEY);
-      const parsedValue = storedValue ? JSON.parse(storedValue) : [];
-      if (Array.isArray(parsedValue)) {
-        setPinnedIds(parsedValue.filter((id): id is string => typeof id === 'string'));
-      }
-    } catch {
-      setPinnedIds([]);
-    }
+    usePinnedConversationStore.getState().hydrate();
   }, []);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(PINNED_CONVERSATION_IDS_KEY, JSON.stringify(pinnedIds));
-    } catch {
-      // Pinning is a local UI preference. Storage failures should not block chat usage.
-    }
-  }, [pinnedIds]);
+  // Pinning a chat (here or on a project page) opens the Pinned group so it is seen.
+  useEffect(() => usePinnedConversationStore.subscribe((state, previous) => {
+    if (previous.hydrated && state.ids.length > previous.ids.length) setPinnedOpen(true);
+  }), []);
 
   const handleNew = useCallback(async () => {
     // We don't create a conversation in DB yet (Lazy creation)
@@ -192,86 +172,16 @@ export function ConversationList({
     [onSelect, openMenuId]
   );
 
-  const handleDelete = useCallback(
-    async (id: string) => {
-      await deleteConversationService(id);
-      setPinnedIds((current) => current.filter((pinnedId) => pinnedId !== id));
-      onDelete?.(id);
-    },
-    [onDelete]
-  );
-
-  const openRenameDialog = useCallback((id: string, title: string) => {
-    setRenameTargetId(id);
-    setRenameValue(title);
-  }, []);
-
-  const closeRenameDialog = useCallback(() => {
-    if (isRenaming) return;
-    setRenameTargetId(null);
-    setRenameValue('');
-  }, [isRenaming]);
-
-  const submitRename = useCallback(async () => {
-    if (!renameTargetId) return;
-    const nextTitle = renameValue.trim();
-    if (!nextTitle) {
-      antMessageApi.warning(t('enterConversationName'));
-      return;
-    }
-
-    setIsRenaming(true);
-    try {
-      await databaseService.conversation.update(renameTargetId, { title: nextTitle });
-      useConversationStore.getState().updateConversation(renameTargetId, {
-        title: nextTitle,
-        updatedAt: new Date(),
-      });
-      antMessageApi.success(t('renameSuccess'));
-      setRenameTargetId(null);
-      setRenameValue('');
-    } catch {
-      antMessageApi.error(t('renameFailed'));
-    } finally {
-      setIsRenaming(false);
-    }
-  }, [antMessageApi, renameTargetId, renameValue, t]);
-
-  const togglePinned = useCallback((id: string) => {
-    if (!pinnedIds.includes(id)) setPinnedOpen(true);
-    setPinnedIds((current) => (
-      current.includes(id)
-        ? current.filter((pinnedId) => pinnedId !== id)
-        : [id, ...current]
-    ));
-  }, [pinnedIds]);
-
   const openProjectPage = useCallback((projectId: string | null) => {
     if (projectId) useProjectStore.getState().showProject(projectId);
     else useProjectStore.getState().showList();
     onSelectGumPanel?.('projects');
   }, [onSelectGumPanel]);
 
-  const assignProject = useCallback(async (conversationId: string, projectId: string | null) => {
-    try {
-      await databaseService.conversation.update(conversationId, { projectId });
-      useConversationStore.getState().updateConversation(conversationId, { projectId, updatedAt: new Date() });
-      const project = projectId ? useProjectStore.getState().projects.find((item) => item.id === projectId) : null;
-      logger.info('conversation_project_assigned', { component: 'ConversationList', conversationId, projectId });
-      antMessageApi.success(project ? t('projectAddedTo', { name: project.name }) : t('projectRemoved'));
-    } catch {
-      antMessageApi.error(t('projectSaveFailed'));
-    }
-  }, [antMessageApi, t]);
-
-  const createAndAssign = useCallback(async (conversationId: string, name: string) => {
-    try {
-      const project = await useProjectStore.getState().create(name);
-      await assignProject(conversationId, project.id);
-    } catch {
-      antMessageApi.error(t('projectSaveFailed'));
-    }
-  }, [antMessageApi, assignProject, t]);
+  const conversationMenu = useConversationMenu({
+    closeMenu: () => setOpenMenuId(null),
+    onDeleted: (id) => onDelete?.(id),
+  });
 
   const isMobileViewport = useCallback(() => (
     window.matchMedia('(max-width: 768px)').matches
@@ -316,65 +226,11 @@ export function ConversationList({
   ), [conversations, workspace]);
   const pinnedIdSet = new Set(pinnedIds);
   const groups = [
-    { key: 'pinned', label: t('pinned'), open: pinnedOpen, toggle: () => setPinnedOpen((open) => !open),
+    { key: 'pinned', label: t('pinned'), open: pinnedOpen, toggle: () => setPinnedOpen(!pinnedOpen),
       items: sortedConversations.filter((conversation) => pinnedIdSet.has(conversation.id)) },
     { key: 'recents', label: t('conversationRecents'), open: recentsOpen, toggle: () => setRecentsOpen((open) => !open),
       items: sortedConversations.filter((conversation) => !pinnedIdSet.has(conversation.id)) },
   ];
-  const menuLabel = (icon: React.ReactNode, label: string) => (
-    <span className="areqa-conversation-menu-label">{icon}<span>{label}</span></span>
-  );
-
-  /** "Add to project" flyout: search or create, then the matching projects (image 07). */
-  const projectSubmenu = (conv: Conversation): NonNullable<MenuProps['items']>[number] => {
-    const query = projectQuery.trim();
-    const needle = query.toLocaleLowerCase();
-    const matches = projects.filter((project) => project.id !== conv.projectId
-      && (!needle || project.name.toLocaleLowerCase().includes(needle)));
-    const exact = projects.some((project) => project.name.toLocaleLowerCase() === needle);
-    return {
-      key: 'project',
-      label: menuLabel(<ProjectIcon size={14} />, t('projectAddTo')),
-      popupClassName: 'areqa-project-submenu',
-      children: [
-        {
-          key: 'project-search',
-          className: 'areqa-project-submenu-search',
-          label: (
-            <input
-              className="areqa-project-submenu-input"
-              value={projectQuery}
-              maxLength={120}
-              placeholder={t('projectSearchOrCreate')}
-              aria-label={t('projectSearchOrCreate')}
-              onChange={(event) => setProjectQuery(event.target.value)}
-              onClick={(event) => event.stopPropagation()}
-              // Typing must not drive the menu's own keyboard navigation.
-              onKeyDown={(event) => {
-                event.stopPropagation();
-                if (event.key === 'Enter') {
-                  setOpenMenuId(null);
-                  if (matches.length === 1 && query) void assignProject(conv.id, matches[0].id);
-                  else if (query && !exact) void createAndAssign(conv.id, query);
-                }
-              }}
-            />
-          ),
-        },
-        {
-          key: 'project-new',
-          label: menuLabel(<Plus size={14} />, query && !exact ? t('projectCreateNamed', { name: query }) : t('projectNew')),
-        },
-        { type: 'divider' },
-        ...matches.map((project) => ({ key: `project:${project.id}`, label: project.name, title: project.name })),
-        ...(conv.projectId ? [
-          { type: 'divider' as const },
-          { key: 'project-remove', label: menuLabel(<FolderMinus size={14} />, t('projectRemoveFrom')) },
-        ] : []),
-      ],
-    };
-  };
-
   const renderConversationRow = (conv: Conversation, nested = false) => {
     const isPinned = pinnedIds.includes(conv.id);
     const hasDefaultTitle = DEFAULT_CONVERSATION_TITLES.has(conv.title);
@@ -396,12 +252,7 @@ export function ConversationList({
       : [];
     // Nested rows sit under a pinned project; they share ids with Recents rows, so menus are keyed apart.
     const menuId = nested ? `nested:${conv.id}` : conv.id;
-    const menuItems: MenuProps['items'] = [
-      { key: 'pin', label: menuLabel(
-        isPinned ? <PinOff size={14} /> : <Pin size={14} />, t(isPinned ? 'unpin' : 'pin'),
-      ) },
-      { key: 'rename', label: menuLabel(<Pencil size={14} />, t('rename')) },
-      ...(isSignedIn && !conv.collaboration ? [projectSubmenu(conv)] : []),
+    const menuItems = conversationMenu.itemsFor(conv, [
       ...(source ? [{
         key: `branch:${source.id}`,
         label: menuLabel(<BranchIcon size={14} />, t('conversationBranchReturn')),
@@ -411,9 +262,7 @@ export function ConversationList({
         label: menuLabel(<BranchIcon size={14} />, t('conversationBranches')),
         children: childBranches.map((child) => ({ key: `branch:${child.id}`, label: child.title })),
       }] : []),
-      { type: 'divider' },
-      { key: 'delete', danger: true, label: menuLabel(<Trash2 size={14} />, t('delete')) },
-    ];
+    ]);
 
     return (
       <Dropdown
@@ -427,28 +276,13 @@ export function ConversationList({
             if (key.startsWith('branch:')) {
               longPressTriggeredRef.current = false;
               void handleSelect(key.slice('branch:'.length));
-            } else if (key === 'rename') {
-              openRenameDialog(conv.id, displayTitle);
-            } else if (key === 'pin') {
-              togglePinned(conv.id);
-            } else if (key.startsWith('project:')) {
-              void assignProject(conv.id, key.slice('project:'.length));
-            } else if (key === 'project-new') {
-              const query = projectQuery.trim();
-              if (query && !projects.some((project) => project.name.toLocaleLowerCase() === query.toLocaleLowerCase())) {
-                void createAndAssign(conv.id, query);
-              } else {
-                setCreateProject({ conversationId: conv.id });
-              }
-            } else if (key === 'project-remove') {
-              void assignProject(conv.id, null);
-            } else if (key === 'delete') {
-              void handleDelete(conv.id);
+            } else {
+              conversationMenu.handleKey(conv, key, displayTitle);
             }
           },
         }}
         onOpenChange={(open) => {
-          if (!open) setProjectQuery('');
+          if (!open) conversationMenu.resetProjectQuery();
           setOpenMenuId((current) => (open ? menuId : current === menuId ? null : current));
         }}
         open={openMenuId === menuId}
@@ -469,7 +303,8 @@ export function ConversationList({
           onPointerLeave={handleItemPointerEnd}
           onPointerUp={handleItemPointerEnd}
         >
-          {!nested && conversationBranchesEnabled && conv.branchOrigin && <span className="areqa-conversation-item-icon">
+          {!nested && isPinned && <span className="areqa-conversation-item-icon"><MessageCircle size={17} aria-hidden="true" /></span>}
+          {!nested && !isPinned && conversationBranchesEnabled && conv.branchOrigin && <span className="areqa-conversation-item-icon">
             <BranchIcon />
           </span>}
           <div className="areqa-conversation-item-content">
@@ -488,7 +323,6 @@ export function ConversationList({
               )}
             </span>
           </div>
-          {!nested && isPinned && <Pin size={13} className="areqa-conversation-pinned-icon" />}
           <button
             className="areqa-conversation-menu-btn conversation-menu-btn"
             onClick={(event) => {
@@ -526,7 +360,7 @@ export function ConversationList({
           menu={{
             items: [
               { key: 'pin', label: menuLabel(<PinOff size={14} />, t('projectUnpin')) },
-              { key: 'rename', label: menuLabel(<Pencil size={14} />, t('rename')) },
+              { key: 'rename', label: menuLabel(<Pencil size={14} />, t('projectEditDetails')) },
               { type: 'divider' },
               { key: 'delete', danger: true, label: menuLabel(<Trash2 size={14} />, t('delete')) },
             ],
@@ -571,12 +405,17 @@ export function ConversationList({
             </button>
           </div>
         </Dropdown>
-        {projectConversations.slice(0, PINNED_PROJECT_PREVIEW_COUNT).map((conv) => renderConversationRow(conv, true))}
-        {projectConversations.length > PINNED_PROJECT_PREVIEW_COUNT && (
-          <button type="button" className="areqa-conversation-item areqa-conversation-project-child areqa-conversation-project-more"
-            onClick={() => openProjectPage(project.id)}>
-            {t('projectViewAll')}
-          </button>
+        {projectConversations.length > 0 && (
+          // Nested chats hang off a thin guide line under the project icon (sidebar reference).
+          <div className="areqa-conversation-project-children">
+            {projectConversations.slice(0, PINNED_PROJECT_PREVIEW_COUNT).map((conv) => renderConversationRow(conv, true))}
+            {projectConversations.length > PINNED_PROJECT_PREVIEW_COUNT && (
+              <button type="button" className="areqa-conversation-item areqa-conversation-project-child areqa-conversation-project-more"
+                onClick={() => openProjectPage(project.id)}>
+                {t('projectViewAll')}
+              </button>
+            )}
+          </div>
         )}
       </div>
     );
@@ -653,7 +492,7 @@ export function ConversationList({
                 type="button"
                 className="areqa-conversation-projects-create"
                 aria-label={t('projectCreate')}
-                onClick={() => setCreateProject({ conversationId: null })}
+                onClick={() => setCreateProjectOpen(true)}
               >
                 <Plus size={15} aria-hidden="true" />
               </button>
@@ -742,42 +581,25 @@ export function ConversationList({
           ))}
         </div>
       </Modal>
-      <Modal
-        confirmLoading={isRenaming}
-        okButtonProps={{ disabled: !renameValue.trim() }}
-        okText={t('save')}
-        onCancel={closeRenameDialog}
-        onOk={submitRename}
-        open={renameTargetId !== null}
-        title={t('renameTitle')}
-      >
-        <Input
-          autoFocus
-          maxLength={80}
-          onChange={(event) => setRenameValue(event.target.value)}
-          onPressEnter={submitRename}
-          placeholder={t('renamePlaceholder')}
-          value={renameValue}
-        />
-      </Modal>
-      <ProjectNameModal
-        open={createProject !== null}
-        title={t('projectCreate')}
-        onClose={() => setCreateProject(null)}
-        onSubmit={async (name) => {
-          const target = createProject?.conversationId ?? null;
-          const project = await useProjectStore.getState().create(name);
-          if (target) await assignProject(target, project.id);
-          else openProjectPage(project.id);
+      {conversationMenu.dialogs}
+      <ProjectFormModal
+        open={createProjectOpen}
+        onClose={() => setCreateProjectOpen(false)}
+        onSubmit={async ({ name, description }) => {
+          const project = await useProjectStore.getState().create(name, description);
+          openProjectPage(project.id);
         }}
       />
-      <ProjectNameModal
+      <ProjectFormModal
         open={renameProjectId !== null}
-        title={t('rename')}
-        initialName={projects.find((project) => project.id === renameProjectId)?.name ?? ''}
+        mode="edit"
+        initialValues={(() => {
+          const project = projects.find((item) => item.id === renameProjectId);
+          return { name: project?.name ?? '', description: project?.description ?? '' };
+        })()}
         onClose={() => setRenameProjectId(null)}
-        onSubmit={async (name) => {
-          if (renameProjectId) await useProjectStore.getState().update(renameProjectId, { name });
+        onSubmit={async (values) => {
+          if (renameProjectId) await useProjectStore.getState().update(renameProjectId, values);
         }}
       />
     </div>

@@ -88,6 +88,37 @@ describe('ProjectsPanel', () => {
   });
 });
 
+describe('ProjectsPanel recent chat rows', () => {
+  beforeEach(async () => {
+    const { usePinnedConversationStore } = await import('@/store/pinnedConversations');
+    usePinnedConversationStore.setState({ ids: [], hydrated: true });
+    const { useAuthStore } = await import('@/store/auth');
+    useAuthStore.setState({ user: { id: 'u' } as never });
+    useProjectStore.setState({ projects: [project()], view: { kind: 'project', projectId: PROJECT_ID } });
+    useConversationStore.setState({ conversations: [conversation({ id: 'in', title: 'Friendship reflections', projectId: PROJECT_ID })] });
+  });
+
+  it('puts the title above both columns and the row menu offers the project actions', async () => {
+    renderPanel();
+    const heading = screen.getByRole('heading', { level: 1, name: 'Diary' });
+    expect(heading.closest('[class*="detailLayout"]')).toBeNull();
+
+    const row = document.querySelector('[data-project-chat-row]') as HTMLElement;
+    fireEvent.click(row.querySelector('button[aria-haspopup="menu"]') as HTMLElement);
+    for (const name of [/pin/, /rename/, /projectChange/, /projectRemoveFrom/, /delete/]) {
+      expect(await screen.findByRole('menuitem', { name })).toBeInTheDocument();
+    }
+  });
+
+  it('pinning from the project page updates the shared pinned list', async () => {
+    const { usePinnedConversationStore } = await import('@/store/pinnedConversations');
+    renderPanel();
+    fireEvent.click(document.querySelector('[data-project-chat-row] button[aria-haspopup="menu"]') as HTMLElement);
+    fireEvent.click(await screen.findByRole('menuitem', { name: /^pin$/ }));
+    expect(usePinnedConversationStore.getState().ids).toEqual(['in']);
+  });
+});
+
 describe('isProjectMemoryStale', () => {
   it('refreshes when memory is missing or older than newer chats, but not too often', async () => {
     const { isProjectMemoryStale } = await import('@/components/Projects/ProjectMemoryModal');

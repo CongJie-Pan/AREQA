@@ -59,10 +59,12 @@ async function send(page: Page, content: string) {
   await page.getByRole('button', { name: '發送訊息', exact: true }).click();
 }
 
-async function createProject(page: Page, name: string) {
-  await page.getByRole('button', { name: '建立專案', exact: true }).click();
-  await page.getByLabel('專案名稱').fill(name);
-  await page.getByRole('dialog').getByRole('button', { name: /儲\s*存/ }).click();
+async function createProject(page: Page, name: string, goal = '') {
+  await page.locator('.areqa-conversation-projects-nav').getByRole('button', { name: '建立專案', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '建立專案' });
+  await dialog.getByLabel('您正在進行什麼工作？').fill(name);
+  if (goal) await dialog.getByLabel('您想達成什麼目標？').fill(goal);
+  await dialog.getByRole('button', { name: '建立專案', exact: true }).click();
   await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
 }
 
@@ -115,8 +117,13 @@ test('@smoke instructions, memory and the account-memory switch reach the projec
   const side = page.locator('aside').filter({ hasText: '記憶' });
 
   await side.getByRole('button', { name: '新增', exact: true }).click();
-  await page.getByRole('dialog', { name: '指示' }).getByRole('textbox').fill('先給重點');
-  await page.getByRole('dialog', { name: '指示' }).getByRole('button', { name: /儲\s*存/ }).click();
+  const instructions = page.getByRole('dialog', { name: '設定專案指示' });
+  await expect(instructions).toContainText('向 AREQA 提供與「Diary」中工作階段相關的指示與資訊。');
+  await expect(instructions.getByPlaceholder('遇到複雜問題時，請逐步思考並展示推理過程。請使用具體範例。')).toBeFocused();
+  await expect(instructions.getByRole('button', { name: '儲存指示' })).toBeDisabled();
+  await expect(instructions.getByRole('button', { name: 'Close' })).toHaveCount(0);
+  await instructions.getByRole('textbox').fill('先給重點');
+  await instructions.getByRole('button', { name: '儲存指示' }).click();
   await expect.poll(() => projects.get(projectId)?.instructions).toBe('先給重點');
   await expect(side.getByText('先給重點')).toBeVisible();
 
@@ -196,8 +203,81 @@ test('@smoke the layout follows the reference screens (images 01–07)', async (
   await row.hover();
   await row.getByTitle('對話選單').click();
   const labels = await page.locator('.ant-dropdown:visible .ant-dropdown-menu-root > .ant-dropdown-menu-item, .ant-dropdown:visible .ant-dropdown-menu-root > .ant-dropdown-menu-submenu').allTextContents();
-  expect(labels.slice(0, 3)).toEqual(['釘選聊天', '重新命名', '加入專案']);
-  await page.getByRole('menuitem', { name: /加入專案/ }).hover();
+  // This chat already belongs to Diary, so the flyout reads 更換專案 and removal sits beside it.
+  expect(labels.slice(0, 4)).toEqual(['釘選聊天', '重新命名', '更換專案', '從專案中移除']);
+  await page.getByRole('menuitem', { name: /更換專案/ }).hover();
   await expect(page.getByLabel('搜尋或建立專案')).toBeVisible();
   await expect(page.getByRole('menuitem', { name: /新增專案/ })).toBeVisible();
+});
+
+test('@smoke the sidebar "+" opens the create dialog from the reference and stores the goal', async ({ page }) => {
+  const { projects } = await mockBackend(page);
+  await page.goto('/');
+
+  await page.locator('.areqa-conversation-projects-nav').hover();
+  await page.getByRole('button', { name: '建立專案', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '建立專案' });
+  await expect(dialog.getByText('您正在進行什麼工作？')).toBeVisible();
+  await expect(dialog.getByPlaceholder('為您的專案命名')).toBeFocused();
+  await expect(dialog.getByText('您想達成什麼目標？')).toBeVisible();
+  await expect(dialog.getByPlaceholder('描述您的專案、目標、主題等...')).toBeVisible();
+  await expect(dialog).not.toContainText('背景資訊');
+  await expect(dialog.getByRole('button', { name: '取消' })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: '建立專案', exact: true })).toBeDisabled();
+  await page.keyboard.press('Escape');
+
+  await createProject(page, 'Thesis', '三月前完成文獻回顧');
+  await expect(page.locator('.areqa-chat-main p').filter({ hasText: '三月前完成文獻回顧' })).toBeVisible();
+  await expect.poll(() => [...projects.values()][0]?.description).toBe('三月前完成文獻回顧');
+
+  // 編輯詳細資料 reopens the same dialog with both fields filled.
+  await page.getByRole('navigation', { name: '專案' }).getByRole('button', { name: /Thesis/ }).click();
+  await page.getByRole('menuitem', { name: '編輯詳細資料' }).click();
+  const edit = page.getByRole('dialog', { name: '編輯專案' });
+  await expect(edit.getByLabel('您想達成什麼目標？')).toHaveValue('三月前完成文獻回顧');
+  await edit.getByLabel('您想達成什麼目標？').fill('四月前完成第二章');
+  await edit.getByRole('button', { name: /儲\s*存/ }).click();
+  await expect.poll(() => [...projects.values()][0]?.description).toBe('四月前完成第二章');
+});
+
+test('@smoke project page rows highlight on hover with a ⋯ menu; sidebar shows guide line and pinned chat icon', async ({ page }) => {
+  await mockBackend(page);
+  await page.goto('/');
+  await createProject(page, 'Diary');
+  await send(page, '今天好累');
+  await expect(page.getByText('回覆第1輪', { exact: true })).toBeVisible();
+
+  // Pin the project so its chat nests under it in the sidebar.
+  await page.getByRole('button', { name: '專案', exact: true }).click();
+  const card = page.locator('[role=button]').filter({ hasText: 'Diary' }).first();
+  await card.hover();
+  await card.getByRole('button', { name: '釘選', exact: true }).click();
+  await expect(page.locator('.areqa-conversation-project-children [data-project-conversation-id]')).toHaveCount(1);
+  const guide = await page.locator('.areqa-conversation-project-children').evaluate(
+    (element) => getComputedStyle(element, '::before').width);
+  expect(guide).toBe('1px');
+
+  // Title spans both columns: the composer and the first side row start at the same height.
+  await card.click();
+  const composerTop = (await page.getByPlaceholder('在 Diary 中新增工作階段').boundingBox())!.y;
+  const sideTop = (await page.locator('aside').filter({ hasText: '記憶' }).boundingBox())!.y;
+  expect(Math.abs(composerTop - sideTop)).toBeLessThan(24);
+
+  // Hover: rounded highlight, time hidden, ⋯ shown; its menu has the project actions.
+  const row = page.locator('[data-project-chat-row]').first();
+  const time = row.getByText(/分鐘前/);
+  await expect(time).toBeVisible();
+  await row.hover();
+  await expect(time).toBeHidden();
+  const menuButton = row.getByRole('button', { name: '對話選單' });
+  await expect(menuButton).toBeVisible();
+  await menuButton.click();
+  for (const name of ['釘選聊天', '重新命名', '更換專案', '從專案中移除', '刪除']) {
+    await expect(page.getByRole('menuitem', { name: new RegExp(name) })).toBeVisible();
+  }
+
+  // Pinning here shows the chat with a chat icon in the sidebar's Pinned group at once.
+  await page.getByRole('menuitem', { name: /釘選聊天/ }).click();
+  const pinned = page.locator('[data-conversation-id]').first();
+  await expect(pinned.locator('.areqa-conversation-item-icon svg.lucide-message-circle')).toBeVisible();
 });

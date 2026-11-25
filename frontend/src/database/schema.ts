@@ -44,6 +44,8 @@ export interface Project {
   id: string;
   userId: string;
   name: string;
+  /** Goal from the create dialog ("您想達成什麼目標？"); missing on rows created before it existed. */
+  description?: string;
   /** Learner-written instructions every chat in the project follows. */
   instructions: string;
   /** When false, project chats run without account-level memory. */

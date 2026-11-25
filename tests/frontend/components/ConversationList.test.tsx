@@ -492,6 +492,20 @@ describe('ConversationList projects', () => {
     const nested = document.querySelector('[data-project-conversation-id="in-project"]') as HTMLElement;
     expect(nested).toHaveClass('areqa-conversation-project-child');
     fireEvent.click(within(nested).getByTitle('Conversation menu'));
-    expect(await screen.findByRole('menuitem', { name: /projectAddTo/ })).toBeInTheDocument();
+    // A chat already in a project offers 更換專案 plus a top-level 從專案中移除.
+    expect(await screen.findByRole('menuitem', { name: /projectChange/ })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /projectRemoveFrom/ })).toBeInTheDocument();
+    // Nested chats hang off the guide line wrapper.
+    expect(nested.parentElement?.closest('.areqa-conversation-project-children')).not.toBeNull();
+  });
+
+  it('pinned chats show a chat icon instead of a trailing pin', async () => {
+    const { usePinnedConversationStore } = await import('@/store/pinnedConversations');
+    usePinnedConversationStore.setState({ ids: ['plain'], hydrated: true });
+    window.localStorage.setItem('areqa:pinned-conversation-ids', JSON.stringify(['plain']));
+    renderConversationList();
+    const row = document.querySelector('[data-conversation-id="plain"]') as HTMLElement;
+    expect(row.querySelector('.areqa-conversation-item-icon svg.lucide-message-circle')).not.toBeNull();
+    expect(row.querySelector('.areqa-conversation-pinned-icon')).toBeNull();
   });
 });
