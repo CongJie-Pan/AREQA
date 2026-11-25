@@ -17,7 +17,7 @@ def test_settings_loads_defaults():
     assert s.model_cold_memory_embedding == "openai/text-embedding-3-small"
     assert s.model_memory_semantic_analyzer == "google/gemini-2.5-flash-lite"
     assert s.model_visual_understanding == "google/gemini-3.1-flash-lite"
-    assert s.model_main_instruct == "google/gemini-4-hydrogen:batch"
+    assert s.model_main_instruct == "google/gemini-3.8-flash"
     assert s.model_web_search == "google/gemini-3.8-flash"
     assert s.memory_semantic_analysis_enabled is False
     assert s.memory_semantic_shadow_mode is True
