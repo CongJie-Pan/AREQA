@@ -172,6 +172,9 @@ describe('Projects flow', () => {
     expect(await screen.findByRole('heading', { name: 'Diary' })).toBeInTheDocument();
     const project = useProjectStore.getState().projects[0];
     expect(project.description).toBe('每天記錄心情');
+    // New projects start pinned, so the sidebar lists it right away.
+    expect(project.isPinned).toBe(true);
+    expect(document.querySelector(`[data-project-id="${project.id}"]`)).not.toBeNull();
     expect(screen.getByText('每天記錄心情')).toBeInTheDocument();
     await waitFor(() => expect(cloud.upserts.some((row) => (
       row.id === project.id && row.name === 'Diary' && row.description === '每天記錄心情'))).toBe(true));

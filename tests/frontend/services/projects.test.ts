@@ -70,8 +70,12 @@ describe('projectService', () => {
   it('creates a project locally, pushes it, and clears the pending flag', async () => {
     const created = await projectService.create('  Diary  ');
     expect(created.name).toBe('Diary');
+    // New projects start pinned so they show in the sidebar's Pinned group.
+    expect(created.isPinned).toBe(true);
     await vi.waitFor(async () => expect((await db.projects.get(created.id))?.syncPending).toBe(false));
-    expect(supabaseState.upsert).toHaveBeenCalledWith(expect.objectContaining({ id: created.id, name: 'Diary', user_id: USER }));
+    expect(supabaseState.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      id: created.id, name: 'Diary', user_id: USER, is_pinned: true,
+    }));
   });
 
   it('keeps a failed push pending and retries it on the next sync', async () => {

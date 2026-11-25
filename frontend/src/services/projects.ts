@@ -190,7 +190,8 @@ export const projectService = {
       description: description.trim().slice(0, MAX_PROJECT_DESCRIPTION_CHARS),
       instructions: '',
       useAccountMemory: true,
-      isPinned: false,
+      // New projects start pinned so they appear in the sidebar's Pinned group right away.
+      isPinned: true,
       memorySummary: null,
       memoryDetails: [],
       memoryUpdatedAt: null,

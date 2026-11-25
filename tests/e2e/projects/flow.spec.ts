@@ -79,7 +79,7 @@ test('@smoke creating a project opens its page and survives a reload', async ({ 
   await page.reload();
   await page.getByRole('button', { name: '專案', exact: true }).click();
   await expect(page.getByRole('heading', { name: '專案', exact: true })).toBeVisible();
-  await expect(page.getByText('Diary', { exact: true })).toBeVisible();
+  await expect(page.locator('.areqa-chat-main').getByText('Diary', { exact: true })).toBeVisible();
 });
 
 test('@smoke the first message on a project page starts a project chat that sends project_id', async ({ page }) => {
@@ -104,7 +104,7 @@ test('@smoke the first message on a project page starts a project chat that send
 
   // The project page lists only its own chat.
   await page.getByRole('button', { name: '專案', exact: true }).click();
-  await page.getByText('Diary', { exact: true }).click();
+  await page.locator('.areqa-chat-main').getByText('Diary', { exact: true }).click();
   // Both chats share the mocked title; only the project chat is listed in the main column.
   await expect(page.locator('.areqa-chat-main').getByText('專案對話', { exact: true })).toHaveCount(1);
 });
@@ -167,8 +167,7 @@ test('@smoke the layout follows the reference screens (images 01–07)', async (
   // 01: list page with a two-column card grid; pinning shows a filled pin.
   await page.getByRole('button', { name: '專案', exact: true }).click();
   const card = page.locator('[role=button]').filter({ hasText: 'Diary' }).first();
-  await card.hover();
-  await card.getByRole('button', { name: '釘選', exact: true }).click();
+  // New projects start pinned: the card already shows a filled pin.
   await expect(card.getByRole('button', { name: '取消釘選', exact: true })).toBeVisible();
 
   // 02: the pinned project sits in the Pinned group with its chat nested under it.
@@ -247,11 +246,9 @@ test('@smoke project page rows highlight on hover with a ⋯ menu; sidebar shows
   await send(page, '今天好累');
   await expect(page.getByText('回覆第1輪', { exact: true })).toBeVisible();
 
-  // Pin the project so its chat nests under it in the sidebar.
+  // New projects start pinned, so the chat already nests under it in the sidebar.
   await page.getByRole('button', { name: '專案', exact: true }).click();
   const card = page.locator('[role=button]').filter({ hasText: 'Diary' }).first();
-  await card.hover();
-  await card.getByRole('button', { name: '釘選', exact: true }).click();
   await expect(page.locator('.areqa-conversation-project-children [data-project-conversation-id]')).toHaveCount(1);
   const guide = await page.locator('.areqa-conversation-project-children').evaluate(
     (element) => getComputedStyle(element, '::before').width);
@@ -280,4 +277,21 @@ test('@smoke project page rows highlight on hover with a ⋯ menu; sidebar shows
   await page.getByRole('menuitem', { name: /釘選聊天/ }).click();
   const pinned = page.locator('[data-conversation-id]').first();
   await expect(pinned.locator('.areqa-conversation-item-icon svg.lucide-message-circle')).toBeVisible();
+});
+
+test('@smoke a newly created project is pinned in the sidebar right away', async ({ page }) => {
+  const { projects } = await mockBackend(page);
+  await page.goto('/');
+  await createProject(page, 'Diary');
+
+  await expect(page.locator('[data-project-id]').filter({ hasText: 'Diary' })).toBeVisible();
+  await expect(page.getByRole('banner').getByRole('button', { name: '取消釘選' })).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => [...projects.values()][0]?.is_pinned).toBe(true);
+
+  // Unpinning still works and survives a reload.
+  await page.getByRole('banner').getByRole('button', { name: '取消釘選' }).click();
+  await expect(page.locator('[data-project-id]')).toHaveCount(0);
+  await expect.poll(() => [...projects.values()][0]?.is_pinned).toBe(false);
+  await page.reload();
+  await expect(page.locator('[data-project-id]')).toHaveCount(0);
 });
