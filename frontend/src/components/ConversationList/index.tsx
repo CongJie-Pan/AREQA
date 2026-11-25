@@ -7,9 +7,9 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
-import { App, Dropdown, Input, Modal, Spin } from 'antd';
+import { App, Dropdown, Input, Modal, Spin, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
-import { MoreHorizontal, Pencil, Pin, PinOff, Plus, Search, ChevronRight, Trash2, PanelLeftClose, Mail as MailIcon, FolderClosed, FolderInput, FolderMinus } from 'lucide-react';
+import { MoreHorizontal, Pencil, Pin, PinOff, Plus, Search, ChevronRight, Trash2, PanelLeftClose, Mail as MailIcon, FolderMinus } from 'lucide-react';
 import { BranchIcon, conversationBranchesEnabled } from '@/components/ConversationBranch/BranchIcon';
 import { useConversationStore } from '@/store/conversation';
 import { useChatStore } from '@/store/chat';
@@ -27,8 +27,9 @@ import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { logger } from '@/utils/logger';
 import { conversationKindOf } from '@/utils/conversationKind';
 import { WorkspaceSwitch } from '@/components/WorkspaceSwitch';
-import { ProjectNameModal, ProjectPickerModal } from '@/components/Projects';
+import { ProjectIcon, ProjectNameModal } from '@/components/Projects';
 import { useProjectStore } from '@/store/projects';
+import type { Conversation, Project } from '@/database/schema';
 import { useAuthStore } from '@/store/auth';
 
 const PINNED_CONVERSATION_IDS_KEY = 'areqa:pinned-conversation-ids';
@@ -52,6 +53,10 @@ export interface ConversationListProps {
   onSelectGumPanel?: (type: Exclude<SidePanelType, null>) => void;
   /** Class name for styling */
   className?: string;
+  /** The Projects list page is showing (highlights the Projects entry). */
+  projectsActive?: boolean;
+  /** Project whose page is showing (highlights its pinned row). */
+  activeProjectId?: string | null;
 }
 
 /**
@@ -65,8 +70,10 @@ export function ConversationList({
   externalSidebarToggle = false,
   onSelectGumPanel,
   className,
+  projectsActive = false,
+  activeProjectId = null,
 }: ConversationListProps) {
-  const { message: antMessageApi } = App.useApp();
+  const { message: antMessageApi, modal } = App.useApp();
   const { resolvedTheme, t } = useUserPreferences();
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
@@ -79,11 +86,19 @@ export function ConversationList({
   const [renameTargetId, setRenameTargetId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [isRenaming, setIsRenaming] = useState(false);
-  const [projectPickerConversationId, setProjectPickerConversationId] = useState<string | null>(null);
-  const [createProjectOpen, setCreateProjectOpen] = useState(false);
+  const [projectQuery, setProjectQuery] = useState('');
+  const [projectMenuId, setProjectMenuId] = useState<string | null>(null);
+  const [renameProjectId, setRenameProjectId] = useState<string | null>(null);
+  /** Create dialog; when set from a chat menu, the new project receives that chat. */
+  const [createProject, setCreateProject] = useState<{ conversationId: string | null } | null>(null);
   const isSignedIn = useAuthStore((state) => Boolean(state.user));
   const projects = useProjectStore((state) => state.projects);
   const pinnedProjects = useMemo(() => projects.filter((project) => project.isPinned), [projects]);
+  const hasPinnedProjects = isSignedIn && pinnedProjects.length > 0;
+  // Pinned projects live in the Pinned group, so it opens when the first one appears.
+  useEffect(() => {
+    if (hasPinnedProjects) setPinnedOpen(true);
+  }, [hasPinnedProjects]);
 
   const conversations = useConversationStore((state) => state.conversations);
   const workspace = useConversationStore((state) => state.workspace);
@@ -249,6 +264,15 @@ export function ConversationList({
     }
   }, [antMessageApi, t]);
 
+  const createAndAssign = useCallback(async (conversationId: string, name: string) => {
+    try {
+      const project = await useProjectStore.getState().create(name);
+      await assignProject(conversationId, project.id);
+    } catch {
+      antMessageApi.error(t('projectSaveFailed'));
+    }
+  }, [antMessageApi, assignProject, t]);
+
   const isMobileViewport = useCallback(() => (
     window.matchMedia('(max-width: 768px)').matches
   ), []);
@@ -297,6 +321,267 @@ export function ConversationList({
     { key: 'recents', label: t('conversationRecents'), open: recentsOpen, toggle: () => setRecentsOpen((open) => !open),
       items: sortedConversations.filter((conversation) => !pinnedIdSet.has(conversation.id)) },
   ];
+  const menuLabel = (icon: React.ReactNode, label: string) => (
+    <span className="areqa-conversation-menu-label">{icon}<span>{label}</span></span>
+  );
+
+  /** "Add to project" flyout: search or create, then the matching projects (image 07). */
+  const projectSubmenu = (conv: Conversation): NonNullable<MenuProps['items']>[number] => {
+    const query = projectQuery.trim();
+    const needle = query.toLocaleLowerCase();
+    const matches = projects.filter((project) => project.id !== conv.projectId
+      && (!needle || project.name.toLocaleLowerCase().includes(needle)));
+    const exact = projects.some((project) => project.name.toLocaleLowerCase() === needle);
+    return {
+      key: 'project',
+      label: menuLabel(<ProjectIcon size={14} />, t('projectAddTo')),
+      popupClassName: 'areqa-project-submenu',
+      children: [
+        {
+          key: 'project-search',
+          className: 'areqa-project-submenu-search',
+          label: (
+            <input
+              className="areqa-project-submenu-input"
+              value={projectQuery}
+              maxLength={120}
+              placeholder={t('projectSearchOrCreate')}
+              aria-label={t('projectSearchOrCreate')}
+              onChange={(event) => setProjectQuery(event.target.value)}
+              onClick={(event) => event.stopPropagation()}
+              // Typing must not drive the menu's own keyboard navigation.
+              onKeyDown={(event) => {
+                event.stopPropagation();
+                if (event.key === 'Enter') {
+                  setOpenMenuId(null);
+                  if (matches.length === 1 && query) void assignProject(conv.id, matches[0].id);
+                  else if (query && !exact) void createAndAssign(conv.id, query);
+                }
+              }}
+            />
+          ),
+        },
+        {
+          key: 'project-new',
+          label: menuLabel(<Plus size={14} />, query && !exact ? t('projectCreateNamed', { name: query }) : t('projectNew')),
+        },
+        { type: 'divider' },
+        ...matches.map((project) => ({ key: `project:${project.id}`, label: project.name, title: project.name })),
+        ...(conv.projectId ? [
+          { type: 'divider' as const },
+          { key: 'project-remove', label: menuLabel(<FolderMinus size={14} />, t('projectRemoveFrom')) },
+        ] : []),
+      ],
+    };
+  };
+
+  const renderConversationRow = (conv: Conversation, nested = false) => {
+    const isPinned = pinnedIds.includes(conv.id);
+    const hasDefaultTitle = DEFAULT_CONVERSATION_TITLES.has(conv.title);
+    const isGeneratingTitle = streamingTitles[conv.id] !== undefined;
+    const isAwaitingInitialTitle = (
+      conv.id === activeId &&
+      hasDefaultTitle &&
+      isActiveConversationAwaitingFirstReply
+    );
+    const isTitlePending = isGeneratingTitle || isAwaitingInitialTitle;
+    const displayTitle = isGeneratingTitle
+      ? streamingTitles[conv.id]
+      : (hasDefaultTitle ? t('newChat') : conv.title || t('newChat'));
+    const source = conversationBranchesEnabled && conv.branchOrigin
+      ? conversations.find((item) => item.id === conv.branchOrigin?.conversationId)
+      : undefined;
+    const childBranches = conversationBranchesEnabled
+      ? conversations.filter((item) => item.branchOrigin?.conversationId === conv.id)
+      : [];
+    // Nested rows sit under a pinned project; they share ids with Recents rows, so menus are keyed apart.
+    const menuId = nested ? `nested:${conv.id}` : conv.id;
+    const menuItems: MenuProps['items'] = [
+      { key: 'pin', label: menuLabel(
+        isPinned ? <PinOff size={14} /> : <Pin size={14} />, t(isPinned ? 'unpin' : 'pin'),
+      ) },
+      { key: 'rename', label: menuLabel(<Pencil size={14} />, t('rename')) },
+      ...(isSignedIn && !conv.collaboration ? [projectSubmenu(conv)] : []),
+      ...(source ? [{
+        key: `branch:${source.id}`,
+        label: menuLabel(<BranchIcon size={14} />, t('conversationBranchReturn')),
+      }] : []),
+      ...(childBranches.length ? [{
+        key: 'branches',
+        label: menuLabel(<BranchIcon size={14} />, t('conversationBranches')),
+        children: childBranches.map((child) => ({ key: `branch:${child.id}`, label: child.title })),
+      }] : []),
+      { type: 'divider' },
+      { key: 'delete', danger: true, label: menuLabel(<Trash2 size={14} />, t('delete')) },
+    ];
+
+    return (
+      <Dropdown
+        key={menuId}
+        menu={{
+          items: menuItems,
+          onClick: ({ key, domEvent }) => {
+            domEvent.stopPropagation();
+            if (key === 'project-search') return; // Clicking the search field keeps the menu open.
+            setOpenMenuId(null);
+            if (key.startsWith('branch:')) {
+              longPressTriggeredRef.current = false;
+              void handleSelect(key.slice('branch:'.length));
+            } else if (key === 'rename') {
+              openRenameDialog(conv.id, displayTitle);
+            } else if (key === 'pin') {
+              togglePinned(conv.id);
+            } else if (key.startsWith('project:')) {
+              void assignProject(conv.id, key.slice('project:'.length));
+            } else if (key === 'project-new') {
+              const query = projectQuery.trim();
+              if (query && !projects.some((project) => project.name.toLocaleLowerCase() === query.toLocaleLowerCase())) {
+                void createAndAssign(conv.id, query);
+              } else {
+                setCreateProject({ conversationId: conv.id });
+              }
+            } else if (key === 'project-remove') {
+              void assignProject(conv.id, null);
+            } else if (key === 'delete') {
+              void handleDelete(conv.id);
+            }
+          },
+        }}
+        onOpenChange={(open) => {
+          if (!open) setProjectQuery('');
+          setOpenMenuId((current) => (open ? menuId : current === menuId ? null : current));
+        }}
+        open={openMenuId === menuId}
+        placement="bottomRight"
+        trigger={['contextMenu']}
+      >
+        <div
+          data-conversation-id={nested ? undefined : conv.id}
+          data-project-conversation-id={nested ? conv.id : undefined}
+          className={[
+            'areqa-conversation-item',
+            nested && 'areqa-conversation-project-child',
+            conv.id === activeId && 'areqa-conversation-item-active',
+          ].filter(Boolean).join(' ')}
+          onClick={() => handleItemClick(conv.id)}
+          onPointerCancel={handleItemPointerEnd}
+          onPointerDown={() => handleItemPointerDown(menuId)}
+          onPointerLeave={handleItemPointerEnd}
+          onPointerUp={handleItemPointerEnd}
+        >
+          {!nested && conversationBranchesEnabled && conv.branchOrigin && <span className="areqa-conversation-item-icon">
+            <BranchIcon />
+          </span>}
+          <div className="areqa-conversation-item-content">
+            <span
+              className="areqa-conversation-item-title conv-title"
+              title={isTitlePending ? undefined : displayTitle}
+            >
+              {isTitlePending ? (
+                <span
+                  className="areqa-conversation-title-skeleton"
+                  aria-label={t('newChat')}
+                  role="status"
+                />
+              ) : (
+                <span>{displayTitle}</span>
+              )}
+            </span>
+          </div>
+          {!nested && isPinned && <Pin size={13} className="areqa-conversation-pinned-icon" />}
+          <button
+            className="areqa-conversation-menu-btn conversation-menu-btn"
+            onClick={(event) => {
+              event.stopPropagation();
+              setOpenMenuId((current) => current === menuId ? null : menuId);
+            }}
+            aria-haspopup="menu"
+            aria-expanded={openMenuId === menuId}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setOpenMenuId(null);
+            }}
+            title={t('conversationMenu')}
+            type="button"
+          >
+            <MoreHorizontal size={16} />
+          </button>
+        </div>
+      </Dropdown>
+    );
+  };
+
+  /** A pinned project with its newest chats nested under it (image 02). */
+  const renderPinnedProject = (project: Project) => {
+    const projectConversations = conversations
+      .filter((conversation) => conversation.projectId === project.id)
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    const isActive = project.id === activeProjectId;
+    return (
+      <div key={`project:${project.id}`} className="areqa-conversation-project">
+        <Dropdown
+          open={projectMenuId === project.id}
+          onOpenChange={(open) => setProjectMenuId(open ? project.id : null)}
+          trigger={['contextMenu']}
+          placement="bottomRight"
+          menu={{
+            items: [
+              { key: 'pin', label: menuLabel(<PinOff size={14} />, t('projectUnpin')) },
+              { key: 'rename', label: menuLabel(<Pencil size={14} />, t('rename')) },
+              { type: 'divider' },
+              { key: 'delete', danger: true, label: menuLabel(<Trash2 size={14} />, t('delete')) },
+            ],
+            onClick: ({ key, domEvent }) => {
+              domEvent.stopPropagation();
+              setProjectMenuId(null);
+              if (key === 'pin') void useProjectStore.getState().update(project.id, { isPinned: false });
+              else if (key === 'rename') setRenameProjectId(project.id);
+              else if (key === 'delete') {
+                modal.confirm({
+                  title: t('projectDeleteConfirm', { name: project.name }),
+                  okText: t('delete'),
+                  okButtonProps: { danger: true },
+                  onOk: () => useProjectStore.getState().remove(project.id),
+                });
+              }
+            },
+          }}
+        >
+          <div
+            data-project-id={project.id}
+            className={['areqa-conversation-item', 'areqa-conversation-project-item',
+              isActive && 'areqa-conversation-item-active'].filter(Boolean).join(' ')}
+            onClick={() => openProjectPage(project.id)}
+          >
+            <span className="areqa-conversation-item-icon"><ProjectIcon size={17} /></span>
+            <div className="areqa-conversation-item-content">
+              <span className="areqa-conversation-item-title" title={project.name}><span>{project.name}</span></span>
+            </div>
+            <button
+              className="areqa-conversation-menu-btn conversation-menu-btn"
+              onClick={(event) => {
+                event.stopPropagation();
+                setProjectMenuId((current) => current === project.id ? null : project.id);
+              }}
+              aria-haspopup="menu"
+              aria-expanded={projectMenuId === project.id}
+              title={t('projectMenu')}
+              type="button"
+            >
+              <MoreHorizontal size={16} />
+            </button>
+          </div>
+        </Dropdown>
+        {projectConversations.slice(0, PINNED_PROJECT_PREVIEW_COUNT).map((conv) => renderConversationRow(conv, true))}
+        {projectConversations.length > PINNED_PROJECT_PREVIEW_COUNT && (
+          <button type="button" className="areqa-conversation-item areqa-conversation-project-child areqa-conversation-project-more"
+            onClick={() => openProjectPage(project.id)}>
+            {t('projectViewAll')}
+          </button>
+        )}
+      </div>
+    );
+  };
+
   const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
   const searchResults = searchOpen ? sortedConversations.filter((conversation) => (
     [conversation.title, conversation.lastMessagePreview].some((value) =>
@@ -357,20 +642,22 @@ export function ConversationList({
           <span>{t('conversationSearch')}</span>
         </button>
         {isSignedIn && (
-          <div className="areqa-conversation-projects-nav">
-            <button type="button" className="areqa-conversation-search-button" onClick={() => openProjectPage(null)}>
-              <FolderClosed size={17} aria-hidden="true" />
+          <div className="areqa-conversation-projects-nav" data-active={projectsActive}>
+            <button type="button" className="areqa-conversation-search-button" aria-current={projectsActive ? 'page' : undefined}
+              onClick={() => openProjectPage(null)}>
+              <ProjectIcon size={17} />
               <span>{t('projects')}</span>
             </button>
-            <button
-              type="button"
-              className="areqa-conversation-projects-create"
-              aria-label={t('projectCreate')}
-              title={t('projectCreate')}
-              onClick={() => setCreateProjectOpen(true)}
-            >
-              <Plus size={15} aria-hidden="true" />
-            </button>
+            <Tooltip title={t('projectCreate')} placement="right">
+              <button
+                type="button"
+                className="areqa-conversation-projects-create"
+                aria-label={t('projectCreate')}
+                onClick={() => setCreateProject({ conversationId: null })}
+              >
+                <Plus size={15} aria-hidden="true" />
+              </button>
+            </Tooltip>
           </div>
         )}
         {mailboxEnabled && (
@@ -396,188 +683,26 @@ export function ConversationList({
 
       {/* List Area */}
       <div className="areqa-conversation-scroll-list">
-        {isSignedIn && pinnedProjects.length > 0 && (
-          <section className="areqa-conversation-group" aria-label={t('projects')}>
-            {pinnedProjects.map((project) => {
-              const projectConversations = conversations
-                .filter((conversation) => conversation.projectId === project.id)
-                .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-              return (
-                <div key={project.id}>
-                  <div className="areqa-conversation-item areqa-conversation-project-item"
-                    onClick={() => openProjectPage(project.id)}>
-                    <span className="areqa-conversation-item-icon"><FolderClosed size={16} aria-hidden="true" /></span>
-                    <div className="areqa-conversation-item-content">
-                      <span className="areqa-conversation-item-title"><span>{project.name}</span></span>
-                    </div>
-                  </div>
-                  {projectConversations.slice(0, PINNED_PROJECT_PREVIEW_COUNT).map((conversation) => (
-                    <div key={conversation.id}
-                      className={conversation.id === activeId
-                        ? 'areqa-conversation-item areqa-conversation-project-child areqa-conversation-item-active'
-                        : 'areqa-conversation-item areqa-conversation-project-child'}
-                      onClick={() => { void handleSelect(conversation.id); }}>
-                      <div className="areqa-conversation-item-content">
-                        <span className="areqa-conversation-item-title" title={conversation.title}>
-                          <span>{DEFAULT_CONVERSATION_TITLES.has(conversation.title) ? t('newChat') : conversation.title || t('newChat')}</span>
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                  {projectConversations.length > PINNED_PROJECT_PREVIEW_COUNT && (
-                    <button type="button" className="areqa-conversation-item areqa-conversation-project-child areqa-conversation-project-more"
-                      onClick={() => openProjectPage(project.id)}>
-                      {t('projectViewAll')}
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </section>
-        )}
         {isLoading && conversations.length === 0 ? (
           <div className="areqa-conversation-loading">
             <Spin size="small" />
           </div>
-        ) : groups.map(({ key, label, items, open, toggle }) => (
-          <section key={key} className="areqa-conversation-group">
-            <button type="button" className="areqa-conversation-group-title" aria-expanded={open} onClick={toggle}>
-              {label}
-              <ChevronRight size={13} aria-hidden="true" />
-            </button>
-            {open && items.length === 0 && (
-              <p className="areqa-conversation-empty-text">{t(key === 'pinned' ? 'noPinnedConversations' : 'noConversations')}</p>
-            )}
-            {open && items.map((conv) => {
-              const isPinned = pinnedIds.includes(conv.id);
-              const hasDefaultTitle = DEFAULT_CONVERSATION_TITLES.has(conv.title);
-              const isGeneratingTitle = streamingTitles[conv.id] !== undefined;
-              const isAwaitingInitialTitle = (
-                conv.id === activeId &&
-                hasDefaultTitle &&
-                isActiveConversationAwaitingFirstReply
-              );
-              const isTitlePending = isGeneratingTitle || isAwaitingInitialTitle;
-              const displayTitle = isGeneratingTitle
-                ? streamingTitles[conv.id]
-                : (hasDefaultTitle ? t('newChat') : conv.title || t('newChat'));
-              const source = conversationBranchesEnabled && conv.branchOrigin
-                ? conversations.find((item) => item.id === conv.branchOrigin?.conversationId)
-                : undefined;
-              const childBranches = conversationBranchesEnabled
-                ? conversations.filter((item) => item.branchOrigin?.conversationId === conv.id)
-                : [];
-              const menuLabel = (icon: React.ReactNode, label: string) => (
-                <span className="areqa-conversation-menu-label">{icon}<span>{label}</span></span>
-              );
-              const menuItems: MenuProps['items'] = [
-                { key: 'rename', label: menuLabel(<Pencil size={14} />, t('rename')) },
-                { key: 'pin', label: menuLabel(
-                  isPinned ? <PinOff size={14} /> : <Pin size={14} />, t(isPinned ? 'unpin' : 'pin'),
-                ) },
-                ...(source ? [{
-                  key: `branch:${source.id}`,
-                  label: menuLabel(<BranchIcon size={14} />, t('conversationBranchReturn')),
-                }] : []),
-                ...(isSignedIn && !conv.collaboration ? [
-                  { key: 'project', label: menuLabel(<FolderInput size={14} />, t('projectAddTo')) },
-                  ...(conv.projectId ? [{
-                    key: 'project-remove', label: menuLabel(<FolderMinus size={14} />, t('projectRemoveFrom')),
-                  }] : []),
-                ] : []),
-                ...(childBranches.length ? [{
-                  key: 'branches',
-                  label: menuLabel(<BranchIcon size={14} />, t('conversationBranches')),
-                  children: childBranches.map((child) => ({ key: `branch:${child.id}`, label: child.title })),
-                }] : []),
-                { type: 'divider' },
-                { key: 'delete', danger: true, label: menuLabel(<Trash2 size={14} />, t('delete')) },
-              ];
-
-              return (
-                <Dropdown
-                  key={conv.id}
-                  menu={{
-                    items: menuItems,
-                    onClick: ({ key, domEvent }) => {
-                      domEvent.stopPropagation();
-                      setOpenMenuId(null);
-                      if (key.startsWith('branch:')) {
-                        longPressTriggeredRef.current = false;
-                        void handleSelect(key.slice('branch:'.length));
-                      } else if (key === 'rename') {
-                        openRenameDialog(conv.id, displayTitle);
-                      } else if (key === 'pin') {
-                        togglePinned(conv.id);
-                      } else if (key === 'project') {
-                        setProjectPickerConversationId(conv.id);
-                      } else if (key === 'project-remove') {
-                        void assignProject(conv.id, null);
-                      } else if (key === 'delete') {
-                        void handleDelete(conv.id);
-                      }
-                    },
-                  }}
-                  onOpenChange={(open) => setOpenMenuId((current) => (
-                    open ? conv.id : current === conv.id ? null : current
-                  ))}
-                  open={openMenuId === conv.id}
-                  placement="bottomRight"
-                  trigger={['contextMenu']}
-                >
-                  <div
-                    data-conversation-id={conv.id}
-                    className={conv.id === activeId
-                      ? 'areqa-conversation-item areqa-conversation-item-active'
-                      : 'areqa-conversation-item'}
-                    onClick={() => handleItemClick(conv.id)}
-                    onPointerCancel={handleItemPointerEnd}
-                    onPointerDown={() => handleItemPointerDown(conv.id)}
-                    onPointerLeave={handleItemPointerEnd}
-                    onPointerUp={handleItemPointerEnd}
-                  >
-                    {conversationBranchesEnabled && conv.branchOrigin && <span className="areqa-conversation-item-icon">
-                      <BranchIcon />
-                    </span>}
-                    <div className="areqa-conversation-item-content">
-                      <span
-                        className="areqa-conversation-item-title conv-title"
-                        title={isTitlePending ? undefined : displayTitle}
-                      >
-                        {isTitlePending ? (
-                          <span
-                            className="areqa-conversation-title-skeleton"
-                            aria-label={t('newChat')}
-                            role="status"
-                          />
-                        ) : (
-                          <span>{displayTitle}</span>
-                        )}
-                      </span>
-                    </div>
-                    {isPinned && <Pin size={13} className="areqa-conversation-pinned-icon" />}
-                    <button
-                      className="areqa-conversation-menu-btn conversation-menu-btn"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setOpenMenuId((current) => current === conv.id ? null : conv.id);
-                      }}
-                      aria-haspopup="menu"
-                      aria-expanded={openMenuId === conv.id}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Escape') setOpenMenuId(null);
-                      }}
-                      title={t('conversationMenu')}
-                      type="button"
-                    >
-                      <MoreHorizontal size={16} />
-                    </button>
-                  </div>
-                </Dropdown>
-              );
-            })}
-          </section>
-        ))}
+        ) : groups.map(({ key, label, items, open, toggle }) => {
+          const projectsInGroup = key === 'pinned' && hasPinnedProjects ? pinnedProjects : [];
+          return (
+            <section key={key} className="areqa-conversation-group">
+              <button type="button" className="areqa-conversation-group-title" aria-expanded={open} onClick={toggle}>
+                {label}
+                <ChevronRight size={13} aria-hidden="true" />
+              </button>
+              {open && items.length === 0 && projectsInGroup.length === 0 && (
+                <p className="areqa-conversation-empty-text">{t(key === 'pinned' ? 'noPinnedConversations' : 'noConversations')}</p>
+              )}
+              {open && projectsInGroup.map((project) => renderPinnedProject(project))}
+              {open && items.map((conv) => renderConversationRow(conv))}
+            </section>
+          );
+        })}
       </div>
 
       {/* User Auth UI Area */}
@@ -635,21 +760,24 @@ export function ConversationList({
           value={renameValue}
         />
       </Modal>
-      <ProjectPickerModal
-        open={projectPickerConversationId !== null}
-        currentProjectId={conversations.find((item) => item.id === projectPickerConversationId)?.projectId}
-        onClose={() => setProjectPickerConversationId(null)}
-        onPick={async (projectId) => {
-          if (projectPickerConversationId) await assignProject(projectPickerConversationId, projectId);
+      <ProjectNameModal
+        open={createProject !== null}
+        title={t('projectCreate')}
+        onClose={() => setCreateProject(null)}
+        onSubmit={async (name) => {
+          const target = createProject?.conversationId ?? null;
+          const project = await useProjectStore.getState().create(name);
+          if (target) await assignProject(target, project.id);
+          else openProjectPage(project.id);
         }}
       />
       <ProjectNameModal
-        open={createProjectOpen}
-        title={t('projectCreate')}
-        onClose={() => setCreateProjectOpen(false)}
+        open={renameProjectId !== null}
+        title={t('rename')}
+        initialName={projects.find((project) => project.id === renameProjectId)?.name ?? ''}
+        onClose={() => setRenameProjectId(null)}
         onSubmit={async (name) => {
-          const project = await useProjectStore.getState().create(name);
-          openProjectPage(project.id);
+          if (renameProjectId) await useProjectStore.getState().update(renameProjectId, { name });
         }}
       />
     </div>

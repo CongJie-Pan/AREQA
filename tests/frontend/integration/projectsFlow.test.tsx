@@ -203,8 +203,9 @@ describe('Projects flow', () => {
     // 6. "Add to project" links the plain chat; its next turn carries the project.
     const plainRow = document.querySelector(`[data-conversation-id="${plainChatId}"]`) as HTMLElement;
     fireEvent.click(within(plainRow).getByTitle('對話選單'));
-    fireEvent.click(await screen.findByRole('menuitem', { name: /加入專案/ }));
-    fireEvent.click(await screen.findByRole('option', { name: 'Diary' }));
+    fireEvent.mouseEnter(await screen.findByRole('menuitem', { name: /加入專案/ }));
+    // The flyout opens after its enter animation.
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Diary' }, { timeout: 3_000 }));
     await waitFor(async () => expect((await db.conversations.get(plainChatId))?.projectId).toBe(project.id));
     await sendFromComposer('接著問');
     await waitForStreams(4);
@@ -212,7 +213,13 @@ describe('Projects flow', () => {
 
     // 7. The project page lists both chats; opening Memory refreshes the stale profile.
     fireEvent.click(screen.getByRole('button', { name: '專案' }));
-    fireEvent.click(await screen.findByText('Diary'));
+    // The closed flyout stays mounted, so pick the project card itself.
+    const card = await waitFor(() => {
+      const found = screen.getAllByRole('button').find((button) => button.textContent?.startsWith('Diary'));
+      expect(found).toBeDefined();
+      return found!;
+    });
+    fireEvent.click(card);
     await waitFor(() => expect(screen.getAllByRole('button').filter((button) => (
       button.className.includes('conversationRow'))).length).toBe(2));
     fireEvent.click(within(screen.getByText('記憶').closest('aside') as HTMLElement).getByRole('button', { name: '檢視' }));

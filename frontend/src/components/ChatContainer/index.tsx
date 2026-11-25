@@ -621,6 +621,8 @@ export function ChatContainer({ className, openingShare = false }: ChatContainer
     setGumPanelType(null); // Return to chat view
   }, [closeSidebar, exitSharedView]);
 
+  const projectView = useProjectStore((state) => state.view);
+
   // Projects are a signed-in feature; signing out drops the cached list.
   useEffect(() => {
     if (!historyUserId) useProjectStore.getState().reset();
@@ -629,10 +631,10 @@ export function ChatContainer({ className, openingShare = false }: ChatContainer
   // The Projects page replaces the conversation view, so leave the active
   // conversation first: a send from a project page must start a new chat.
   const openSidePanel = useCallback((type: Exclude<SidePanelType, null>) => {
-    const projectView = useProjectStore.getState().view;
+    const currentView = useProjectStore.getState().view;
     // Only an open project page may hand its project to the next new chat.
     useProjectStore.getState().setDraftProjectId(
-      type === 'projects' && projectView.kind === 'project' ? projectView.projectId : null,
+      type === 'projects' && currentView.kind === 'project' ? currentView.projectId : null,
     );
     if (type === 'projects') {
       exitSharedView();
@@ -953,6 +955,8 @@ export function ChatContainer({ className, openingShare = false }: ChatContainer
           onNew={handleNewConversation}
           externalSidebarToggle
           onSelectGumPanel={openSidePanel}
+          projectsActive={gumPanelType === 'projects' && projectView.kind === 'list'}
+          activeProjectId={gumPanelType === 'projects' && projectView.kind === 'project' ? projectView.projectId : null}
         />
         {sidebarOpen && (
           <div

@@ -1,13 +1,14 @@
 'use client';
 
 /**
- * Projects panel in the main column: the project list page and one project's
- * page (composer, its conversations, instructions and memory).
+ * Projects panel in the main column: the project list page (image 01) and one
+ * project's page (image 03: top bar, composer, recent chats, instructions and
+ * memory). Scheduling and background files are intentionally left out.
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { App, Dropdown, Input, Modal } from 'antd';
-import { ArrowUpDown, BookText, Brain, ChevronDown, FolderClosed, Pin, PinOff, Search } from 'lucide-react';
+import { App, Dropdown, Input, Modal, Tooltip } from 'antd';
+import { ArrowUpDown, BookText, Brain, ChevronDown, Pin, Search } from 'lucide-react';
 import type { Conversation, Project } from '@/database/schema';
 import { useProjectStore } from '@/store/projects';
 import { useConversationStore } from '@/store/conversation';
@@ -15,6 +16,7 @@ import { useUserPreferences } from '@/contexts/UserPreferencesContext';
 import { ChatInput, type ChatInputProps } from '@/components/ChatInput';
 import { MAX_PROJECT_INSTRUCTIONS_CHARS, MAX_PROJECT_NAME_CHARS } from '@/services/projects';
 import { ProjectMemoryModal } from './ProjectMemoryModal';
+import { ProjectIcon } from './ProjectIcon';
 import { formatProjectTime } from './format';
 import styles from './Projects.module.css';
 
@@ -77,9 +79,7 @@ export function ProjectsPanel(props: ProjectsPanelProps) {
   ));
   return (
     <div className={styles.page}>
-      <div className={styles.inner}>
-        {project ? <ProjectDetail project={project} {...props} /> : <ProjectList />}
-      </div>
+      {project ? <ProjectDetail project={project} {...props} /> : <div className={styles.inner}><ProjectList /></div>}
     </div>
   );
 }
@@ -113,16 +113,19 @@ function ProjectList() {
       <div className={styles.header}>
         <h1 className={styles.title}>{t('projects')}</h1>
         <div className={styles.headerActions}>
-          <button type="button" className={styles.iconButton} aria-label={t('projectSearchPlaceholder')}
-            aria-pressed={searchOpen} onClick={() => setSearchOpen((open) => !open)}>
-            <Search size={18} aria-hidden="true" />
-          </button>
-          <button type="button" className={styles.iconButton} aria-pressed={sortByName}
-            aria-label={t(sortByName ? 'projectSortName' : 'projectSortRecent')}
-            title={t(sortByName ? 'projectSortName' : 'projectSortRecent')}
-            onClick={() => setSortByName((value) => !value)}>
-            <ArrowUpDown size={18} aria-hidden="true" />
-          </button>
+          <Tooltip title={t('projectSearchPlaceholder')}>
+            <button type="button" className={styles.iconButton} aria-label={t('projectSearchPlaceholder')}
+              aria-pressed={searchOpen} onClick={() => setSearchOpen((open) => !open)}>
+              <Search size={19} aria-hidden="true" />
+            </button>
+          </Tooltip>
+          <Tooltip title={t(sortByName ? 'projectSortName' : 'projectSortRecent')}>
+            <button type="button" className={styles.iconButton} aria-pressed={sortByName}
+              aria-label={t(sortByName ? 'projectSortName' : 'projectSortRecent')}
+              onClick={() => setSortByName((value) => !value)}>
+              <ArrowUpDown size={19} aria-hidden="true" />
+            </button>
+          </Tooltip>
           <button type="button" className={styles.primaryButton} onClick={() => setCreateOpen(true)}>
             {t('projectNew')}
           </button>
@@ -146,16 +149,19 @@ function ProjectList() {
                   useProjectStore.getState().showProject(project.id);
                 }
               }}>
-              <span className={styles.cardIcon}><FolderClosed size={18} aria-hidden="true" /></span>
+              <span className={styles.cardIcon}><ProjectIcon size={20} /></span>
               <span className={styles.cardText}>
                 <span className={styles.cardName}>{project.name}</span>
-                <span className={styles.muted}>{formatProjectTime(project.updatedAt, language)}</span>
+                <span className={styles.cardTime}>{formatProjectTime(project.updatedAt, language)}</span>
               </span>
-              <button type="button" className={`${styles.iconButton} ${styles.cardPin}`}
-                aria-pressed={project.isPinned} aria-label={t(project.isPinned ? 'unpin' : 'pin')}
-                onClick={(event) => { event.stopPropagation(); void togglePin(project); }}>
-                {project.isPinned ? <Pin size={16} aria-hidden="true" /> : <PinOff size={16} aria-hidden="true" style={{ opacity: 0.35 }} />}
-              </button>
+              {/* Pinned projects always show a filled pin; others reveal an outline pin on hover. */}
+              <Tooltip title={t(project.isPinned ? 'projectUnpin' : 'projectPin')}>
+                <button type="button" className={`${styles.iconButton} ${styles.cardPin}`}
+                  aria-pressed={project.isPinned} aria-label={t(project.isPinned ? 'projectUnpin' : 'projectPin')}
+                  onClick={(event) => { event.stopPropagation(); void togglePin(project); }}>
+                  <Pin size={18} aria-hidden="true" fill={project.isPinned ? 'currentColor' : 'none'} />
+                </button>
+              </Tooltip>
             </div>
           ))}
         </div>
@@ -174,10 +180,15 @@ function ProjectDetail({ project, onStartChat, onOpenConversation, onOpenAccount
   const { t, language } = useUserPreferences();
   const { message, modal } = App.useApp();
   const allConversations = useConversationStore((state) => state.conversations);
-  const conversations = useMemo(() => allConversations
-    .filter((conversation: Conversation) => conversation.projectId === project.id)
-    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
-  [allConversations, project.id]);
+  const [chatQuery, setChatQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const conversations = useMemo(() => {
+    const needle = chatQuery.trim().toLocaleLowerCase();
+    return allConversations
+      .filter((conversation: Conversation) => conversation.projectId === project.id
+        && (!needle || conversation.title.toLocaleLowerCase().includes(needle)))
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  }, [allConversations, chatQuery, project.id]);
   const [instructionsOpen, setInstructionsOpen] = useState(false);
   const [instructionsDraft, setInstructionsDraft] = useState(project.instructions);
   const [savingInstructions, setSavingInstructions] = useState(false);
@@ -196,6 +207,14 @@ function ProjectDetail({ project, onStartChat, onOpenConversation, onOpenAccount
     }
   };
 
+  const togglePin = async () => {
+    try {
+      await useProjectStore.getState().update(project.id, { isPinned: !project.isPinned });
+    } catch {
+      message.error(t('projectSaveFailed'));
+    }
+  };
+
   const confirmDelete = () => {
     modal.confirm({
       title: t('projectDeleteConfirm', { name: project.name }),
@@ -207,73 +226,101 @@ function ProjectDetail({ project, onStartChat, onOpenConversation, onOpenAccount
 
   return (
     <>
-      <nav className={styles.breadcrumb} aria-label={t('projects')}>
-        <button type="button" className={styles.breadcrumbLink} onClick={() => useProjectStore.getState().showList()}>
-          {t('projects')}
-        </button>
-        <span aria-hidden="true">/</span>
-        <Dropdown trigger={['click']} menu={{
-          items: [
-            { key: 'rename', label: t('rename') },
-            { key: 'pin', label: t(project.isPinned ? 'unpin' : 'pin') },
-            { type: 'divider' },
-            { key: 'delete', danger: true, label: t('delete') },
-          ],
-          onClick: ({ key }) => {
-            if (key === 'rename') setRenameOpen(true);
-            else if (key === 'pin') void useProjectStore.getState().update(project.id, { isPinned: !project.isPinned });
-            else if (key === 'delete') confirmDelete();
-          },
-        }}>
-          <button type="button" className={styles.breadcrumbLink} style={{ color: 'var(--foreground)' }}>
-            {project.name} <ChevronDown size={14} style={{ verticalAlign: '-2px' }} aria-hidden="true" />
+      {/* Top bar: "專案 / Diary ▾" on the left, search and pin on the right (image 03). */}
+      <header className={styles.topBar}>
+        <nav className={styles.breadcrumb} aria-label={t('projects')}>
+          <button type="button" className={styles.breadcrumbLink} onClick={() => useProjectStore.getState().showList()}>
+            {t('projects')}
           </button>
-        </Dropdown>
-      </nav>
-      <h1 className={styles.title} style={{ marginBottom: 24 }}>{project.name}</h1>
-      <div className={styles.detailLayout}>
-        <div>
-          <div className={styles.composer}>
-            <ChatInput
-              key={project.id}
-              onSend={onStartChat}
-              disabled={composerDisabled}
-              placeholder={t('projectNewSession', { name: project.name })}
-            />
-          </div>
-          <h2 className={styles.sectionTitle}>{t('projectRecents')}</h2>
-          {conversations.length === 0 ? (
-            <p className={styles.muted}>{t('projectNoConversations')}</p>
-          ) : conversations.map((conversation) => (
-            <button key={conversation.id} type="button" className={styles.conversationRow}
-              onClick={() => onOpenConversation(conversation.id)}>
-              <span className={styles.conversationTitle}>
-                {DEFAULT_CONVERSATION_TITLES.has(conversation.title) ? t('newChat') : conversation.title || t('newChat')}
-              </span>
-              <span className={styles.muted}>{formatProjectTime(new Date(conversation.updatedAt), language)}</span>
+          <span className={styles.breadcrumbSeparator} aria-hidden="true">/</span>
+          <Dropdown trigger={['click']} menu={{
+            items: [
+              { key: 'rename', label: t('rename') },
+              { key: 'pin', label: t(project.isPinned ? 'projectUnpin' : 'projectPin') },
+              { type: 'divider' },
+              { key: 'delete', danger: true, label: t('delete') },
+            ],
+            onClick: ({ key }) => {
+              if (key === 'rename') setRenameOpen(true);
+              else if (key === 'pin') void togglePin();
+              else if (key === 'delete') confirmDelete();
+            },
+          }}>
+            <button type="button" className={styles.breadcrumbCurrent}>
+              <span>{project.name}</span>
+              <ChevronDown size={16} aria-hidden="true" />
             </button>
-          ))}
+          </Dropdown>
+        </nav>
+        <div className={styles.headerActions}>
+          <Tooltip title={t('projectSearchChats')}>
+            <button type="button" className={styles.iconButton} aria-label={t('projectSearchChats')}
+              aria-pressed={searchOpen} onClick={() => setSearchOpen((open) => !open)}>
+              <Search size={19} aria-hidden="true" />
+            </button>
+          </Tooltip>
+          <Tooltip title={t(project.isPinned ? 'projectUnpin' : 'projectPin')}>
+            <button type="button" className={styles.iconButton} aria-label={t(project.isPinned ? 'projectUnpin' : 'projectPin')}
+              aria-pressed={project.isPinned} onClick={() => { void togglePin(); }}>
+              <Pin size={19} aria-hidden="true" fill={project.isPinned ? 'currentColor' : 'none'} />
+            </button>
+          </Tooltip>
         </div>
-        <aside className={styles.side}>
-          <div className={styles.sideRow}>
-            <BookText size={18} aria-hidden="true" />
-            <span className={styles.sideLabel}>{t('projectInstructions')}</span>
-            <button type="button" className={styles.linkButton} onClick={() => {
-              setInstructionsDraft(project.instructions);
-              setInstructionsOpen(true);
-            }}>
-              {t(project.instructions ? 'projectEdit' : 'projectAdd')}
-            </button>
+      </header>
+
+      <div className={styles.inner}>
+        <div className={styles.detailLayout}>
+          <div>
+            <h1 className={`${styles.title} ${styles.detailTitle}`}>{project.name}</h1>
+            <div className={styles.composer}>
+              <ChatInput
+                key={project.id}
+                onSend={onStartChat}
+                disabled={composerDisabled}
+                placeholder={t('projectNewSession', { name: project.name })}
+              />
+            </div>
+            {searchOpen && (
+              <Input autoFocus allowClear className={styles.search} prefix={<Search size={16} aria-hidden="true" />}
+                placeholder={t('projectSearchChats')} aria-label={t('projectSearchChats')}
+                value={chatQuery} onChange={(event) => setChatQuery(event.target.value)} />
+            )}
+            <h2 className={styles.sectionTitle}>{t('projectRecents')}</h2>
+            {conversations.length === 0 ? (
+              <p className={styles.muted}>{t('projectNoConversations')}</p>
+            ) : conversations.map((conversation) => (
+              <button key={conversation.id} type="button" className={styles.conversationRow}
+                data-project-chat-row=""
+                onClick={() => onOpenConversation(conversation.id)}>
+                <span className={styles.conversationTitle}>
+                  {DEFAULT_CONVERSATION_TITLES.has(conversation.title) ? t('newChat') : conversation.title || t('newChat')}
+                </span>
+                <span className={styles.cardTime}>{formatProjectTime(new Date(conversation.updatedAt), language)}</span>
+              </button>
+            ))}
           </div>
-          {project.instructions && <p className={styles.instructionsPreview}>{project.instructions}</p>}
-          <div className={styles.sideRow}>
-            <Brain size={18} aria-hidden="true" />
-            <span className={styles.sideLabel}>{t('projectMemory')}</span>
-            <button type="button" className={styles.linkButton} onClick={() => setMemoryOpen(true)}>
-              {t('projectView')}
-            </button>
-          </div>
-        </aside>
+          <aside className={styles.side}>
+            <div className={styles.sideRow}>
+              <BookText size={20} aria-hidden="true" />
+              <span className={styles.sideLabel}>{t('projectInstructions')}</span>
+              <button type="button" className={styles.linkButton} onClick={() => {
+                setInstructionsDraft(project.instructions);
+                setInstructionsOpen(true);
+              }}>
+                {t(project.instructions ? 'projectEdit' : 'projectAdd')}
+              </button>
+            </div>
+            {project.instructions && <p className={styles.instructionsPreview}>{project.instructions}</p>}
+            <div className={styles.sideRow}>
+              <Brain size={20} aria-hidden="true" />
+              <span className={styles.sideLabel}>{t('projectMemory')}</span>
+              <button type="button" className={styles.linkButton} onClick={() => setMemoryOpen(true)}>
+                {t('projectView')}
+              </button>
+            </div>
+            <p className={styles.visibility}>{t('projectPrivate')}</p>
+          </aside>
+        </div>
       </div>
 
       <Modal open={instructionsOpen} title={t('projectInstructions')} onCancel={() => setInstructionsOpen(false)}

@@ -303,6 +303,12 @@ export type TranslationKey =
   | 'projectDeleteConfirm'
   | 'projectSaveFailed'
   | 'projectSignInRequired'
+  | 'projectMenu'
+  | 'projectPin'
+  | 'projectUnpin'
+  | 'projectPrivate'
+  | 'projectSearchChats'
+  | 'projectMemoryEditTooltip'
   | 'rename'
   | 'unpin'
   | 'pin'
@@ -773,7 +779,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     projectSortRecent: "依最近活動排序",
     projectSortName: "依名稱排序",
     projectsEmpty: "還沒有專案。建立一個專案，讓相關對話共用指示與記憶。",
-    projectNewSession: "在 {name} 中新增對話",
+    projectNewSession: "在 {name} 中新增工作階段",
     projectRecents: "最近項目",
     projectNoConversations: "這個專案還沒有對話。",
     projectViewAll: "檢視全部",
@@ -807,6 +813,12 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     projectDeleteConfirm: "刪除專案「{name}」？裡面的對話會保留，只是不再屬於這個專案。",
     projectSaveFailed: "專案儲存失敗，請稍後再試",
     projectSignInRequired: "登入後即可使用專案",
+    projectMenu: "專案選單",
+    projectPin: "釘選",
+    projectUnpin: "取消釘選",
+    projectPrivate: "私人",
+    projectSearchChats: "搜尋此專案的對話",
+    projectMemoryEditTooltip: "編輯",
     rename: '重新命名',
     unpin: '取消釘選',
     pin: '釘選聊天',
@@ -1251,7 +1263,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     projectSortRecent: "按最近活动排序",
     projectSortName: "按名称排序",
     projectsEmpty: "还没有项目。创建一个项目，让相关对话共用指示与记忆。",
-    projectNewSession: "在 {name} 中新建对话",
+    projectNewSession: "在 {name} 中新建工作阶段",
     projectRecents: "最近项目",
     projectNoConversations: "这个项目还没有对话。",
     projectViewAll: "查看全部",
@@ -1285,6 +1297,12 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     projectDeleteConfirm: "删除项目“{name}”？里面的对话会保留，只是不再属于这个项目。",
     projectSaveFailed: "项目保存失败，请稍后再试",
     projectSignInRequired: "登录后即可使用项目",
+    projectMenu: "项目菜单",
+    projectPin: "置顶",
+    projectUnpin: "取消置顶",
+    projectPrivate: "私人",
+    projectSearchChats: "搜索此项目的对话",
+    projectMemoryEditTooltip: "编辑",
     rename: '重新命名',
     unpin: '取消置顶',
     pin: '置顶聊天',
@@ -1729,7 +1747,7 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     projectSortRecent: "Sort by recent activity",
     projectSortName: "Sort by name",
     projectsEmpty: "No projects yet. Create one so related chats share instructions and memory.",
-    projectNewSession: "New chat in {name}",
+    projectNewSession: "New session in {name}",
     projectRecents: "Recents",
     projectNoConversations: "No chats in this project yet.",
     projectViewAll: "View all",
@@ -1763,6 +1781,12 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     projectDeleteConfirm: "Delete \"{name}\"? Its chats are kept; they just leave the project.",
     projectSaveFailed: "Could not save the project. Try again later.",
     projectSignInRequired: "Sign in to use projects",
+    projectMenu: "Project menu",
+    projectPin: "Pin",
+    projectUnpin: "Unpin",
+    projectPrivate: "Private",
+    projectSearchChats: "Search chats in this project",
+    projectMemoryEditTooltip: "Edit",
     rename: 'Rename',
     unpin: 'Unpin',
     pin: 'Pin chat',

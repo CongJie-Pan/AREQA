@@ -100,13 +100,19 @@ describe('Projects regressions', () => {
     expect(screen.queryByRole('menuitem', { name: /加入專案/ })).toBeNull();
   });
 
-  it('existing conversation menu items keep their order with Delete last', async () => {
+  it('chat menu follows image 07: Pin, Rename, Add to project, …, Delete last', async () => {
     renderSidebar();
     fireEvent.click(screen.getByTitle('對話選單'));
     await screen.findByRole('menuitem', { name: /加入專案/ });
-    const labels = screen.getAllByRole('menuitem').map((item) => item.textContent);
-    expect(labels[0]).toMatch(/重新命名/);
+    const labels = screen.getAllByRole('menuitem').map((item) => item.textContent ?? '');
+    expect(labels.slice(0, 3).map((label) => label.replace(/\s/g, ''))).toEqual(['釘選聊天', '重新命名', '加入專案']);
     expect(labels.at(-1)).toMatch(/刪除/);
+  });
+
+  it('the project row menu is named apart from chat menus', () => {
+    renderSidebar();
+    expect(screen.getAllByTitle('對話選單')).toHaveLength(1);
+    expect(screen.getByTitle('專案選單')).toBeInTheDocument();
   });
 
   it('opening a chat from the sidebar while a project page is open does not file the next new chat', async () => {

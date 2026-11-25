@@ -1,3 +1,5 @@
+/* Projects pages. Layout and spacing follow the reference screenshots (temp/01–07). */
+
 .page {
   width: 100%;
   height: 100%;
@@ -6,9 +8,19 @@
 }
 
 .inner {
-  max-width: 1120px;
+  max-width: 1240px;
   margin: 0 auto;
-  padding: 40px 32px 64px;
+  padding: 40px 48px 64px;
+}
+
+/* Serif display titles, as in "專案" and "Diary" in the screenshots. */
+.title {
+  margin: 0;
+  font-family: Georgia, Cambria, 'Noto Serif TC', 'Songti TC', 'Times New Roman', serif;
+  font-size: 30px;
+  font-weight: 500;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .header {
@@ -16,29 +28,21 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 28px;
-}
-
-.title {
-  margin: 0;
-  font-size: 28px;
-  font-weight: 600;
-  line-height: 1.25;
-  overflow-wrap: anywhere;
+  margin-bottom: 64px;
 }
 
 .headerActions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .iconButton {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -47,47 +51,60 @@
 }
 
 .iconButton:hover,
-.iconButton[aria-pressed='true'] {
+.iconButton[aria-pressed='true']:not(.cardPin) {
   background: var(--areqa-account-hover, var(--muted));
 }
 
 .primaryButton {
   height: 34px;
-  padding: 0 14px;
-  border: 1px solid var(--border);
+  margin-left: 6px;
+  padding: 0 12px;
+  border: 0;
   border-radius: 8px;
   background: var(--foreground);
   color: var(--background);
+  font-size: 15px;
   font-weight: 500;
   cursor: pointer;
 }
 
-.search {
-  margin-bottom: 20px;
+.secondaryButton {
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--areqa-account-hover, var(--muted));
+  color: var(--foreground);
+  font-size: 15px;
+  cursor: pointer;
 }
 
+.search {
+  margin: -40px 0 24px;
+}
+
+/* Two columns of borderless cards (image 01). */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
 }
 
 .card {
   display: flex;
   align-items: center;
-  gap: 14px;
-  min-height: 76px;
-  padding: 14px 16px;
-  border: 1px solid var(--areqa-subtle-border, var(--border));
+  gap: 16px;
+  min-height: 80px;
+  padding: 16px 20px;
   border-radius: 12px;
-  background: var(--card);
+  background: var(--areqa-account-hover, var(--card));
   color: inherit;
   text-align: left;
   cursor: pointer;
 }
 
 .card:hover {
-  background: var(--areqa-account-hover, var(--muted));
+  filter: brightness(1.12);
 }
 
 .cardIcon {
@@ -95,10 +112,10 @@
   flex: none;
   align-items: center;
   justify-content: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 9px;
-  background: var(--muted);
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--background);
   color: var(--muted-foreground);
 }
 
@@ -107,29 +124,32 @@
   flex: 1;
   min-width: 0;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
 .cardName {
   overflow: hidden;
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.muted {
+.cardTime {
+  flex: none;
   color: var(--muted-foreground);
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .cardPin {
   flex: none;
-  color: var(--muted-foreground);
+  opacity: 0;
 }
 
-.cardPin[aria-pressed='true'] {
-  color: var(--foreground);
+.cardPin[aria-pressed='true'],
+.card:hover .cardPin,
+.cardPin:focus-visible {
+  opacity: 1;
 }
 
 .empty {
@@ -138,42 +158,85 @@
   text-align: center;
 }
 
-.breadcrumb {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 24px;
+.muted {
   color: var(--muted-foreground);
   font-size: 14px;
 }
 
-.breadcrumbLink {
-  padding: 0;
+/* Project page top bar (image 03). */
+.topBar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 56px;
+  padding: 0 16px 0 24px;
+  border-bottom: 1px solid var(--areqa-subtle-border, var(--border));
+  background: var(--background);
+}
+
+.breadcrumb {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  font-size: 17px;
+}
+
+.breadcrumbLink,
+.breadcrumbCurrent {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
   border: 0;
+  border-radius: 6px;
   background: transparent;
-  color: inherit;
+  color: var(--foreground);
+  font-size: inherit;
+  white-space: nowrap;
   cursor: pointer;
 }
 
-.breadcrumbLink:hover {
-  color: var(--foreground);
+.breadcrumbLink:hover,
+.breadcrumbCurrent:hover {
+  background: var(--areqa-account-hover, var(--muted));
+}
+
+.breadcrumbCurrent span {
+  overflow: hidden;
+  max-width: 40vw;
+  text-overflow: ellipsis;
+}
+
+.breadcrumbSeparator {
+  color: var(--muted-foreground);
 }
 
 .detailLayout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: 56px;
+  grid-template-columns: minmax(0, 1fr) 400px;
+  gap: 72px;
 }
 
+.detailTitle {
+  margin-bottom: 28px;
+  font-size: 32px;
+}
+
+/* The composer wrapper pads its box; pull it out so the box lines up with the title. */
 .composer {
-  margin: 0 -16px 32px;
+  margin: 0 -36px 56px;
 }
 
 .sectionTitle {
-  margin: 0 0 8px;
+  margin: 0 0 4px;
   color: var(--muted-foreground);
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 16px;
+  font-weight: 400;
 }
 
 .conversationRow {
@@ -182,13 +245,17 @@
   justify-content: space-between;
   gap: 16px;
   width: 100%;
-  padding: 16px 0;
+  padding: 20px 0;
   border: 0;
   border-bottom: 1px solid var(--areqa-subtle-border, var(--border));
   background: transparent;
   color: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+.conversationRow:last-child {
+  border-bottom: 0;
 }
 
 .conversationRow:hover .conversationTitle {
@@ -197,27 +264,29 @@
 
 .conversationTitle {
   overflow: hidden;
-  font-size: 15px;
+  font-size: 17px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* Right column starts level with the composer, below the title. */
 .side {
   display: flex;
   flex-direction: column;
+  padding-top: 76px;
 }
 
 .sideRow {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 18px 0;
+  gap: 16px;
+  padding: 22px 0;
   border-bottom: 1px solid var(--areqa-subtle-border, var(--border));
 }
 
 .sideLabel {
   flex: 1;
-  font-size: 15px;
+  font-size: 17px;
 }
 
 .linkButton {
@@ -225,7 +294,7 @@
   border: 0;
   background: transparent;
   color: var(--foreground);
-  font-size: 14px;
+  font-size: 16px;
   cursor: pointer;
 }
 
@@ -233,36 +302,96 @@
   text-decoration: underline;
 }
 
-.linkButton:disabled {
-  color: var(--muted-foreground);
-  cursor: default;
-  text-decoration: none;
-}
-
 .instructionsPreview {
   display: -webkit-box;
-  margin-top: -8px;
-  padding-bottom: 14px;
+  margin: -10px 0 0;
+  padding: 0 0 16px 36px;
   overflow: hidden;
   border-bottom: 1px solid var(--areqa-subtle-border, var(--border));
   color: var(--muted-foreground);
-  font-size: 13px;
+  font-size: 14px;
   white-space: pre-wrap;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
 }
 
-.memoryRow {
-  display: grid;
-  grid-template-columns: 90px minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  border-radius: 10px;
+.visibility {
+  margin: 24px 0 0;
+  color: var(--muted-foreground);
+  font-size: 14px;
 }
 
-.memoryRow:hover {
+/* Memory dialog (images 04–06). */
+.memoryModal :global(.ant-modal-content) {
+  padding: 24px 24px 20px;
+  border-radius: 20px;
+}
+
+.memoryModal :global(.ant-modal-title) {
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.memoryBack {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.memoryRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px -12px 0;
+  padding: 4px 8px 4px 0;
+  border-radius: 12px;
+}
+
+.memoryRow:hover,
+.memoryRow:focus-within {
   background: var(--areqa-account-hover, var(--muted));
+}
+
+.memoryRowOpen {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  grid-template-columns: 240px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 24px;
+  padding: 14px 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.memoryRowLabel {
+  font-weight: 500;
+}
+
+.memoryRowSummary,
+.memoryRowTime {
+  color: var(--muted-foreground);
+}
+
+.memoryRowActions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+}
+
+.memoryRow:hover .memoryRowActions,
+.memoryRow:focus-within .memoryRowActions {
+  opacity: 1;
 }
 
 .ellipsis {
@@ -271,69 +400,141 @@
   white-space: nowrap;
 }
 
-.memoryToggleRow {
+.memoryEmpty {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-top: 8px;
-  padding: 16px 12px 4px;
+  padding: 16px 0;
+}
+
+.memoryToggleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 8px -24px 0;
+  padding: 20px 24px 4px;
   border-top: 1px solid var(--areqa-subtle-border, var(--border));
 }
 
-.memoryDetail dt {
-  margin-top: 16px;
+.memoryToggleTitle {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.memoryToggleHint {
+  margin-top: 4px;
   color: var(--muted-foreground);
-  font-size: 13px;
+  font-size: 15px;
+}
+
+.underlineLink {
+  margin-top: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 15px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.memoryDetailBody {
+  padding-top: 12px;
+}
+
+.memoryDetailHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.memoryDetailHeader h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.memoryDetail {
+  margin: 0;
+}
+
+.memoryDetail dt {
+  margin-top: 24px;
+  color: var(--muted-foreground);
+  font-size: 14px;
 }
 
 .memoryDetail dd {
-  margin: 6px 0 0;
+  margin: 8px 0 0;
+  font-size: 16px;
+  line-height: 1.6;
 }
 
 .memoryDetail ul {
   margin: 0;
-  padding-left: 20px;
+  padding-left: 28px;
+  list-style: disc;
 }
 
 .memoryDetail li + li {
-  margin-top: 6px;
+  margin-top: 8px;
 }
 
+/* "Tell AREQA what to change": pill input with a round send button inside (image 06). */
 .reviseForm {
   display: flex;
-  gap: 8px;
-  margin-top: 20px;
-}
-
-.pickerList {
-  display: flex;
-  max-height: 320px;
-  margin-top: 12px;
-  overflow-y: auto;
-  flex-direction: column;
-}
-
-.pickerItem {
-  display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 10px;
+  gap: 8px;
+  margin-top: 28px;
+  padding: 8px 8px 8px 20px;
+  border: 1px solid var(--areqa-subtle-border, var(--border));
+  border-radius: 999px;
+  background: var(--areqa-chat-input-background, var(--background));
+}
+
+.reviseInput {
+  flex: 1;
+  min-width: 0;
   border: 0;
-  border-radius: 8px;
+  outline: none;
   background: transparent;
   color: inherit;
-  text-align: left;
+  font-size: 16px;
+}
+
+.reviseInput::placeholder {
+  color: var(--muted-foreground);
+}
+
+.reviseSend {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--areqa-account-hover, var(--muted));
+  color: var(--foreground);
   cursor: pointer;
 }
 
-.pickerItem:hover {
-  background: var(--areqa-account-hover, var(--muted));
+.reviseSend:disabled {
+  color: var(--muted-foreground);
+  cursor: default;
 }
 
 @media (max-width: 900px) {
   .inner {
     padding: 56px 16px 48px;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
   }
 
   .detailLayout {
@@ -342,10 +543,18 @@
   }
 
   .side {
-    order: -1;
+    padding-top: 0;
   }
 
   .composer {
-    margin: 0 0 24px;
+    margin: 0 0 32px;
+  }
+
+  .memoryRowOpen {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .memoryRowTime {
+    display: none;
   }
 }

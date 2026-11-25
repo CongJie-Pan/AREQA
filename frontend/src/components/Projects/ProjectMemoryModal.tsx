@@ -1,14 +1,17 @@
 'use client';
 
 /**
- * Project memory dialog: the memory profile row (view, edit, delete), the
- * account-memory toggle, and a detail view where the learner can ask AREQA to
- * change the profile in plain words.
+ * Project memory dialog (images 04–06).
+ *
+ * Overview: one "Profile" row (summary, "updated …"; Edit and Delete appear on
+ * hover) and the account-memory switch. Detail: last updated, summary, detail
+ * bullets, Delete, and a "Tell AREQA what to change" field that rewrites the
+ * profile. Opening the dialog refreshes a stale profile from the project chats.
  */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { App, Button, Input, Modal, Popconfirm, Switch, Tooltip } from 'antd';
-import { ArrowLeft, Pencil, RefreshCw, Trash2 } from 'lucide-react';
+import { App, Button, Modal, Popconfirm, Spin, Switch, Tooltip } from 'antd';
+import { ArrowLeft, ArrowUp, Pencil, Trash2 } from 'lucide-react';
 import type { Project } from '@/database/schema';
 import { useProjectStore } from '@/store/projects';
 import { useConversationStore } from '@/store/conversation';
@@ -40,11 +43,11 @@ export function ProjectMemoryModal({ project, open, onClose, onOpenAccountMemory
   const [instruction, setInstruction] = useState('');
   const [busy, setBusy] = useState<'refresh' | 'revise' | null>(null);
   const hasMemory = Boolean(project.memorySummary || project.memoryDetails.length);
+  const updatedAgo = formatProjectTime(project.memoryUpdatedAt, language);
   const latestChatAt = useConversationStore((state) => state.conversations
     .filter((conversation) => conversation.projectId === project.id)
     .reduce<number | null>((latest, conversation) => Math.max(latest ?? 0, new Date(conversation.updatedAt).getTime()), null));
   const autoRefreshedRef = useRef(false);
-  const updatedAgo = formatProjectTime(project.memoryUpdatedAt, language);
 
   const close = () => {
     setView('overview');
@@ -71,7 +74,7 @@ export function ProjectMemoryModal({ project, open, onClose, onOpenAccountMemory
     autoRefreshedRef.current = true;
     setBusy('refresh');
     useProjectStore.getState().refreshMemory(project.id)
-      .catch(() => undefined) // Silent: the learner can still press Update and see the error.
+      .catch(() => undefined) // Silent: the empty state still offers a manual update.
       .finally(() => setBusy(null));
   }, [busy, latestChatAt, open, project.id, project.memoryUpdatedAt]);
 
@@ -106,8 +109,9 @@ export function ProjectMemoryModal({ project, open, onClose, onOpenAccountMemory
     }
   };
 
-  const deleteButton = (children: React.ReactNode) => (
-    <Popconfirm title={t('projectMemoryDeleteConfirm')} onConfirm={() => { void remove(); }} okText={t('delete')}>
+  const withDeleteConfirm = (children: React.ReactElement) => (
+    <Popconfirm title={t('projectMemoryDeleteConfirm')} onConfirm={() => { void remove(); }} okText={t('delete')}
+      okButtonProps={{ danger: true }}>
       {children}
     </Popconfirm>
   );
@@ -117,47 +121,55 @@ export function ProjectMemoryModal({ project, open, onClose, onOpenAccountMemory
       open={open}
       onCancel={close}
       footer={null}
-      width={680}
+      width={900}
+      centered
       destroyOnHidden
+      className={styles.memoryModal}
       title={view === 'detail' ? (
-        <button type="button" className={styles.breadcrumbLink} onClick={() => setView('overview')}>
-          <ArrowLeft size={16} style={{ verticalAlign: '-3px', marginRight: 6 }} aria-hidden="true" />
-          {t('projectMemory')}
+        <button type="button" className={styles.memoryBack} onClick={() => setView('overview')}>
+          <ArrowLeft size={18} aria-hidden="true" />
+          <span>{t('projectMemory')}</span>
         </button>
       ) : t('projectMemory')}
     >
       {view === 'overview' ? (
         <>
           {hasMemory ? (
-            <div className={styles.memoryRow}>
-              <button type="button" className={styles.linkButton} onClick={() => setView('detail')}>
-                {t('projectMemoryProfile')}
+            <div className={styles.memoryRow} role="group" aria-label={t('projectMemoryProfile')}>
+              <button type="button" className={styles.memoryRowOpen} onClick={() => setView('detail')}>
+                <span className={styles.memoryRowLabel}>{t('projectMemoryProfile')}</span>
+                <span className={`${styles.ellipsis} ${styles.memoryRowSummary}`}>{project.memorySummary}</span>
+                <span className={styles.memoryRowTime}>
+                  {busy === 'refresh' ? <Spin size="small" /> : updatedAgo && t('projectMemoryUpdated', { time: updatedAgo })}
+                </span>
               </button>
-              <span className={`${styles.ellipsis} ${styles.muted}`}>{project.memorySummary}</span>
-              <span className={styles.muted}>{updatedAgo && t('projectMemoryUpdated', { time: updatedAgo })}</span>
-              <span>
-                <Tooltip title={t('projectEdit')}>
-                  <Button type="text" size="small" icon={<Pencil size={15} />} aria-label={t('projectEdit')}
-                    onClick={() => setView('detail')} />
+              <span className={styles.memoryRowActions}>
+                <Tooltip title={t('projectMemoryEditTooltip')}>
+                  <button type="button" className={styles.iconButton} aria-label={t('projectEdit')}
+                    onClick={() => setView('detail')}>
+                    <Pencil size={17} aria-hidden="true" />
+                  </button>
                 </Tooltip>
-                {deleteButton(
-                  <Button type="text" size="small" icon={<Trash2 size={15} />} aria-label={t('delete')} />,
+                {withDeleteConfirm(
+                  <button type="button" className={styles.iconButton} aria-label={t('delete')}>
+                    <Trash2 size={17} aria-hidden="true" />
+                  </button>,
                 )}
               </span>
             </div>
           ) : (
-            <p className={styles.muted}>{t('projectMemoryEmpty')}</p>
+            <div className={styles.memoryEmpty}>
+              <span className={styles.muted}>{t('projectMemoryEmpty')}</span>
+              <Button size="small" loading={busy === 'refresh'} onClick={() => { void refresh(); }}>
+                {t('projectMemoryRefresh')}
+              </Button>
+            </div>
           )}
-          <div style={{ padding: '4px 12px 12px' }}>
-            <Button size="small" icon={<RefreshCw size={14} />} loading={busy === 'refresh'} onClick={() => { void refresh(); }}>
-              {t('projectMemoryRefresh')}
-            </Button>
-          </div>
           <div className={styles.memoryToggleRow}>
             <div>
-              <div>{t('projectUseAccountMemory')}</div>
-              <div className={styles.muted}>{t('projectUseAccountMemoryHint')}</div>
-              <button type="button" className={styles.linkButton} style={{ textDecoration: 'underline', marginTop: 4 }}
+              <div className={styles.memoryToggleTitle}>{t('projectUseAccountMemory')}</div>
+              <div className={styles.memoryToggleHint}>{t('projectUseAccountMemoryHint')}</div>
+              <button type="button" className={styles.underlineLink}
                 onClick={() => { close(); onOpenAccountMemory(); }}>
                 {t('projectViewAccountMemory')}
               </button>
@@ -167,10 +179,10 @@ export function ProjectMemoryModal({ project, open, onClose, onOpenAccountMemory
           </div>
         </>
       ) : (
-        <div>
-          <div className={styles.header} style={{ marginBottom: 8 }}>
-            <strong style={{ fontSize: 17 }}>{t('projectMemoryProfile')}</strong>
-            {deleteButton(<Button size="small">{t('delete')}</Button>)}
+        <div className={styles.memoryDetailBody}>
+          <div className={styles.memoryDetailHeader}>
+            <h3>{t('projectMemoryProfile')}</h3>
+            {withDeleteConfirm(<button type="button" className={styles.secondaryButton}>{t('delete')}</button>)}
           </div>
           <dl className={styles.memoryDetail}>
             <dt>{t('projectMemoryLastUpdated')}</dt>
@@ -186,7 +198,8 @@ export function ProjectMemoryModal({ project, open, onClose, onOpenAccountMemory
             )}
           </dl>
           <form className={styles.reviseForm} onSubmit={(event) => { event.preventDefault(); void revise(); }}>
-            <Input
+            <input
+              className={styles.reviseInput}
               value={instruction}
               maxLength={1000}
               onChange={(event) => setInstruction(event.target.value)}
@@ -194,9 +207,10 @@ export function ProjectMemoryModal({ project, open, onClose, onOpenAccountMemory
               aria-label={t('projectMemoryRevisePlaceholder')}
               disabled={busy === 'revise'}
             />
-            <Button type="primary" htmlType="submit" loading={busy === 'revise'} disabled={!instruction.trim()}>
-              {t('save')}
-            </Button>
+            <button type="submit" className={styles.reviseSend} aria-label={t('save')}
+              disabled={!instruction.trim() || busy === 'revise'}>
+              {busy === 'revise' ? <Spin size="small" /> : <ArrowUp size={18} aria-hidden="true" />}
+            </button>
           </form>
         </div>
       )}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { App } from 'antd';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -438,8 +438,10 @@ describe('ConversationList projects', () => {
     renderConversationList();
 
     fireEvent.click(screen.getAllByTitle('Conversation menu').at(-1)!);
-    fireEvent.click(await screen.findByRole('menuitem', { name: /projectAddTo/ }));
-    fireEvent.click(await screen.findByRole('option', { name: 'Diary' }));
+    // "Add to project" is a flyout submenu (image 07): search field, New project, then projects.
+    fireEvent.mouseEnter(await screen.findByRole('menuitem', { name: /projectAddTo/ }));
+    expect(await screen.findByLabelText('projectSearchOrCreate')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Diary' }));
 
     await vi.waitFor(() => expect(databaseService.conversation.update).toHaveBeenCalledWith('plain', { projectId: PROJECT_ID }));
     expect(useConversationStore.getState().conversations.find((item) => item.id === 'plain')?.projectId).toBe(PROJECT_ID);
@@ -448,7 +450,48 @@ describe('ConversationList projects', () => {
   it('offers removal only for chats that are in a project', async () => {
     renderConversationList();
     fireEvent.click(screen.getAllByTitle('Conversation menu').at(-1)!);
-    await screen.findByRole('menuitem', { name: /projectAddTo/ });
+    fireEvent.mouseEnter(await screen.findByRole('menuitem', { name: /projectAddTo/ }));
+    await screen.findByLabelText('projectSearchOrCreate');
     expect(screen.queryByRole('menuitem', { name: /projectRemoveFrom/ })).toBeNull();
+  });
+
+  it('creates a project from the submenu search and files the chat into it', async () => {
+    vi.mocked(databaseService.conversation.update).mockResolvedValue(undefined);
+    const { useProjectStore } = await import('@/store/projects');
+    const create = vi.fn().mockResolvedValue({
+      id: 'new-project', userId: 'user-1', name: 'Thesis', instructions: '', useAccountMemory: true, isPinned: false,
+      memorySummary: null, memoryDetails: [], memoryUpdatedAt: null, createdAt: at, updatedAt: at,
+    });
+    useProjectStore.setState({ create });
+    renderConversationList();
+
+    fireEvent.click(screen.getAllByTitle('Conversation menu').at(-1)!);
+    fireEvent.mouseEnter(await screen.findByRole('menuitem', { name: /projectAddTo/ }));
+    const search = await screen.findByLabelText('projectSearchOrCreate');
+    fireEvent.change(search, { target: { value: 'Thesis' } });
+    expect(await screen.findByRole('menuitem', { name: /projectCreateNamed/ })).toBeInTheDocument();
+    fireEvent.keyDown(search, { key: 'Enter' });
+
+    await vi.waitFor(() => expect(create).toHaveBeenCalledWith('Thesis'));
+    await vi.waitFor(() => expect(databaseService.conversation.update).toHaveBeenCalledWith('plain', { projectId: 'new-project' }));
+  });
+
+  it('pinned project rows have their own menu to unpin, rename or delete', async () => {
+    const { useProjectStore } = await import('@/store/projects');
+    const update = vi.fn().mockResolvedValue(undefined);
+    useProjectStore.setState({ update });
+    renderConversationList();
+
+    fireEvent.click(screen.getByTitle('projectMenu'));
+    fireEvent.click(await screen.findByRole('menuitem', { name: /projectUnpin/ }));
+    expect(update).toHaveBeenCalledWith(PROJECT_ID, { isPinned: false });
+  });
+
+  it('nested project chats keep the full chat menu', async () => {
+    renderConversationList();
+    const nested = document.querySelector('[data-project-conversation-id="in-project"]') as HTMLElement;
+    expect(nested).toHaveClass('areqa-conversation-project-child');
+    fireEvent.click(within(nested).getByTitle('Conversation menu'));
+    expect(await screen.findByRole('menuitem', { name: /projectAddTo/ })).toBeInTheDocument();
   });
 });

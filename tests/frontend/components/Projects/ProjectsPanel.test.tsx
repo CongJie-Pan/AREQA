@@ -73,7 +73,7 @@ describe('ProjectsPanel', () => {
     fireEvent.click(screen.getByRole('switch', { name: 'projectUseAccountMemory' }));
     expect(update).toHaveBeenCalledWith(PROJECT_ID, { useAccountMemory: false });
 
-    fireEvent.click(screen.getByRole('button', { name: 'projectMemoryProfile' }));
+    fireEvent.click(screen.getByRole('button', { name: /projectMemoryProfile/ }));
     expect(await screen.findByText('Lives in a dorm')).toBeInTheDocument();
   });
 

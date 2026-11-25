@@ -1109,16 +1109,51 @@ button.areqa-topic-finder-badge {
   .areqa-conversation-projects-create { opacity: 1; }
 }
 
-.areqa-conversation-project-child {
-  padding-left: 35px;
-  color: var(--muted-foreground);
+.areqa-conversation-projects-nav[data-active='true'] > .areqa-conversation-search-button {
+  background: var(--areqa-account-hover);
+}
+
+/* Chats nested under a pinned project line up with the project name (image 02). */
+.areqa-conversation-item.areqa-conversation-project-child {
+  padding-left: 37px;
+}
+
+.areqa-conversation-project-item .areqa-conversation-item-icon {
+  color: var(--foreground);
+}
+
+/* "Add to project" flyout: search field, New project, then the projects (image 07). */
+.areqa-project-submenu .ant-dropdown-menu {
+  width: 340px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.areqa-project-submenu .areqa-project-submenu-search {
+  padding: 2px 4px !important;
+  cursor: text !important;
+
+  &:hover { background: transparent !important; }
+}
+
+.areqa-project-submenu-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font-size: 14px;
+
+  &::placeholder { color: var(--muted-foreground); }
 }
 
 .areqa-conversation-project-more {
   width: 100%;
   border: 0;
   background: transparent;
-  font-size: 13px;
+  color: var(--muted-foreground);
+  font-size: 14px;
   text-align: left;
 }
 
