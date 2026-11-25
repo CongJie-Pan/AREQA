@@ -863,37 +863,6 @@ button.areqa-topic-finder-badge {
   small { display: block; color: var(--muted-foreground); font-size: 11.5px; }
 }
 
-/* Topic Finder: one-tap move to the next stage, sent as a learner message. */
-.areqa-topic-stage-nudge {
-  display: flex;
-  justify-content: flex-start;
-  margin: 0 0 8px;
-
-  button {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    max-width: 100%;
-    min-height: 32px;
-    padding: 4px 12px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: var(--background);
-    color: var(--foreground);
-    font: inherit;
-    font-size: 13px;
-    text-align: left;
-    cursor: pointer;
-  }
-
-  button span { overflow-wrap: anywhere; }
-  button:hover:not(:disabled) { background: var(--areqa-account-hover); }
-  button:focus-visible { outline: 2px solid var(--foreground); outline-offset: 2px; }
-  button:disabled { opacity: 0.6; cursor: default; }
-}
-
-
-
 .areqa-topic-card-chips {
   display: flex;
   flex-wrap: wrap;

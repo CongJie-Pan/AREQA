@@ -1009,7 +1009,8 @@ def test_prompt_opens_a_new_stage_with_its_goal_and_where_to_look():
 def test_prompt_offers_the_next_stage_once():
     state = TopicCardState(stage=3, card=TopicCard(mother_question="m"))
     assert "【可以前進（給你的內部指示，不要寫進回覆）】" in render_card_prompt(state)
-    assert "要不要進到第 4 階段「幫候選題目找看得見的證據」" in render_card_prompt(state)
+    assert "建議下一步進到第 4 階段「幫候選題目找看得見的證據」" in render_card_prompt(state)
+    assert "回一聲「好」就可以前進" in render_card_prompt(state)
     assert "【可以前進" not in render_card_prompt(state.model_copy(update={"offered_next": 3}))
     # A pending check-back takes the turn instead.
     reviewed = state.model_copy(update={"review": topic_card.RevisionReview(
@@ -1069,3 +1070,125 @@ async def test_api_card_reports_the_next_stage_when_ready(api):
     await store.propose(owner, conversation, _patch(mother_question="母問題"))
     await store.adopt(owner, conversation, 0)
     assert (await client.get(f"/api/v1/research-coach/{conversation}/card")).json()["next_stage"] == 4
+
+
+# --- Conversation-led stage moves, turn checklist, grounded card fields ------------------------
+
+
+@pytest.mark.parametrize(("message", "expected"), [
+    ("好", True), ("好啊！", True), ("可以", True), ("OK，進吧", True), ("好，我們進下一階段", True), ("yes", True),
+    ("好，不過我想先問一下第 3 階段", False), ("不要", False), ("好像不太對", False), ("", False),
+])
+def test_accepts_offer_only_for_a_short_yes(message, expected):
+    assert topic_card.accepts_offer(message) is expected
+
+
+@pytest.mark.asyncio
+async def test_yes_moves_on_only_right_after_the_coach_asked(storage):
+    store, owner, _other, conversation = storage
+    await store.set_stage(owner, conversation, 3)
+    await store.finish_turn(owner, conversation, asked_before=time_now() + 1)  # opening done
+    await store.propose(owner, conversation, _patch(mother_question="母問題"))
+    await store.adopt(owner, conversation, 0)
+
+    # A "好" before the coach asked changes nothing.
+    await load_card_prompt(owner, conversation, store, last_user_msg="好")
+    assert (await store.load(owner, conversation)).stage == 3
+
+    # The coach asks (the turn's prompt carries the offer), then the learner says yes.
+    assert "【可以前進" in await load_card_prompt(owner, conversation, store, last_user_msg="繼續")
+    await store.finish_turn(owner, conversation, asked_before=time_now())
+    assert (await store.load(owner, conversation)).offer_open is True
+    prompt = await load_card_prompt(owner, conversation, store, last_user_msg="好")
+    state = await store.load(owner, conversation)
+    assert state.stage == 4 and "【進入新階段" in prompt
+    assert (await store.events(owner, conversation))[-1]["source"] == "chat"
+
+
+@pytest.mark.asyncio
+async def test_offer_closes_after_one_learner_message(storage):
+    store, owner, _other, conversation = storage
+    await store.set_stage(owner, conversation, 3)
+    await store.finish_turn(owner, conversation, asked_before=time_now() + 1)
+    await store.propose(owner, conversation, _patch(mother_question="母問題"))
+    await store.adopt(owner, conversation, 0)
+    await store.finish_turn(owner, conversation, asked_before=time_now())  # coach asked
+    await load_card_prompt(owner, conversation, store, last_user_msg="我想再想想母問題")
+    await store.finish_turn(owner, conversation, asked_before=time_now())  # next turn closes the offer
+
+    await load_card_prompt(owner, conversation, store, last_user_msg="好")
+    state = await store.load(owner, conversation)
+    assert state.stage == 3 and state.offer_open is False
+
+
+def test_offer_prompt_names_the_current_and_next_stage():
+    prompt = render_card_prompt(TopicCardState(stage=3, card=TopicCard(mother_question="m")))
+    assert "先用一句話說我們目前在第 3 階段" in prompt and "建議下一步進到第 4 階段" in prompt
+    assert "回一聲「好」就可以前進" in prompt
+
+
+def test_turn_checklist_always_comes_last_even_when_the_card_is_long():
+    state = TopicCardState(stage=4, card=TopicCard(objections=["很長的反問" * 30] * 10), review=topic_card.RevisionReview(
+        version=2, changed=["mother_question"], stages=[2], created_at=1))
+    prompt = render_card_prompt(state)
+    assert len(prompt) <= MAX_PROMPT_CHARS + 2
+    last = prompt.rstrip().splitlines()[-1]
+    assert last.startswith("【本輪回覆檢查（給你的內部指示，不要寫進回覆）】1. 回覆的第一個問題就是回頭檢查")
+    assert "不要以稱讚或評價開頭" in last and "結尾只問一個問題" in last
+
+
+def test_stage_opening_tells_the_learner_where_they_are():
+    prompt = render_card_prompt(TopicCardState(stage=5, stage_entered=topic_card.StageEntry(stage=5, created_at=1)))
+    assert "我們現在在第 5 階段：做得到嗎" in prompt
+    assert "第一句告訴學習者現在在第 5 階段" in prompt.splitlines()[-1]
+
+
+LEARNER = "急迫程度可以用心情溫度計 BSRS-5 的分數來看。我這學期只有 6 週。這個先放著，AI 會順著使用者的思緒"
+
+
+def test_grounding_keeps_only_learner_worded_measures_notes_and_objections(caplog):
+    patch_ = CardPatch(
+        operationalization=[OperationalTerm(term="急迫程度", measure="心情溫度計 BSRS-5 的分數"),
+                            OperationalTerm(term="願意接受", measure="在模擬預約系統中面對 AI 初談時的完成率或放棄率")],
+        feasibility=[FeasibilityItem(key="time", status="unsure", note="只有 6 週"),
+                     FeasibilityItem(key="data", status="ok", note="1-2 週可收集 100 份樣本")],
+        objections_add=["AI 會順著使用者的思緒", "校內外體系因個資與通報責任不明而避險"],
+        change_note="n",
+    )
+    with caplog.at_level(logging.INFO):
+        grounded = topic_card.ground_patch(patch_, TopicCard(), LEARNER, LEARNER)
+    assert [(item.term, item.measure) for item in grounded.operationalization] == [
+        ("急迫程度", "心情溫度計 BSRS-5 的分數"), ("願意接受", "")]
+    assert [(item.key, item.status, item.note) for item in grounded.feasibility] == [
+        ("time", "unsure", "只有 6 週"), ("data", "unsure", "")]
+    assert grounded.objections_add == ["AI 會順著使用者的思緒"]
+    assert "topic_card.patch_grounded measures=1 notes=1 objections=1" in caplog.text
+    assert "BSRS" not in caplog.text
+
+
+def test_grounding_needs_drop_intent_and_tags_tutor_worded_candidates():
+    patch_ = CardPatch(discarded_add=[DiscardedTopic(topic="舊題", filter=4, reason="研究焦點已轉向")],
+                       candidates=["我的分流題目", "校園心輔體系導入AI分流系統的行政適應性研究"], ai_candidates=[],
+                       change_note="n")
+    learner = "我的分流題目想做做看"
+    grounded = topic_card.ground_patch(patch_, TopicCard(), learner, "好，那接下來呢？")
+    assert grounded.discarded_add == []
+    assert grounded.ai_candidates == ["校園心輔體系導入AI分流系統的行政適應性研究"]
+
+    kept = topic_card.ground_patch(patch_, TopicCard(), learner, "這題先淘汰")
+    assert [item.topic for item in kept.discarded_add] == ["舊題"]
+
+
+def test_grounding_keeps_measures_already_on_the_card():
+    card = TopicCard(operationalization=[OperationalTerm(term="信任", measure="信任量表")])
+    patch_ = CardPatch(operationalization=[OperationalTerm(term="信任", measure="信任量表")], change_note="n")
+    assert topic_card.ground_patch(patch_, card, "", "").operationalization[0].measure == "信任量表"
+
+
+@pytest.mark.asyncio
+async def test_extraction_applies_grounding_with_the_learner_messages():
+    client = _client(json.dumps({"operationalization": [{"term": "願意接受", "measure": "模擬系統中的放棄率"}],
+                                 "change_note": "加入關鍵詞"}))
+    patch_ = await extract_card_patch(client, "m", TopicCard(), [{"role": "user", "content": "關鍵詞是願意接受"}],
+                                      "可以用模擬系統中的放棄率來看", stage=4)
+    assert patch_.operationalization[0].measure == ""

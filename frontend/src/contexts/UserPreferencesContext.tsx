@@ -163,10 +163,6 @@ export type TranslationKey =
   | 'topicCardCountObjections'
   | 'topicCardCountVersions'
   | 'topicCardDraftRemoved'
-  | 'topicStageMoveButton'
-  | 'topicStageMoveMessage'
-  | 'topicStageFinishButton'
-  | 'topicStageFinishMessage'
   | 'topicCardDiscarded'
   | 'topicCardDiscardedBy'
   | 'topicCardCanReturn'
@@ -635,10 +631,6 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardCountObjections: "反問 {n}",
     topicCardCountVersions: "版本 {n}",
     topicCardDraftRemoved: "從{field}移除",
-    topicStageMoveButton: "前往第 {n} 階段：{title}",
-    topicStageMoveMessage: "好，我們進到第 {n} 階段：{title}",
-    topicStageFinishButton: "五個階段都談完了：整理最終題目",
-    topicStageFinishMessage: "好，五個階段都談完了，幫我整理最終題目",
     topicCardDiscarded: "淘汰的題目",
     topicCardCanReturn: "之後可以再回來",
     topicCardObjections: "我的反問",
@@ -1074,10 +1066,6 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardCountObjections: "反问 {n}",
     topicCardCountVersions: "版本 {n}",
     topicCardDraftRemoved: "从{field}移除",
-    topicStageMoveButton: "前往第 {n} 阶段：{title}",
-    topicStageMoveMessage: "好，我们进到第 {n} 阶段：{title}",
-    topicStageFinishButton: "五个阶段都谈完了：整理最终题目",
-    topicStageFinishMessage: "好，五个阶段都谈完了，帮我整理最终题目",
     topicCardDiscarded: "淘汰的题目",
     topicCardCanReturn: "之后可以再回来",
     topicCardObjections: "我的反问",
@@ -1513,10 +1501,6 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     topicCardCountObjections: "{n} objections",
     topicCardCountVersions: "{n} versions",
     topicCardDraftRemoved: "Removed from {field}",
-    topicStageMoveButton: "Go to stage {n}: {title}",
-    topicStageMoveMessage: "OK, let's move to stage {n}: {title}",
-    topicStageFinishButton: "All five stages covered: wrap up your topic",
-    topicStageFinishMessage: "OK, let's wrap up the five stages",
     topicCardDiscarded: "Set-aside topics",
     topicCardCanReturn: "may return later",
     topicCardObjections: "My objections",

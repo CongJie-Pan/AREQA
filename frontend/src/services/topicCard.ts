@@ -74,7 +74,7 @@ export interface TopicCardState {
   /** The learner just entered this stage; the coach opens it on the next turn. */
   stage_entered?: { stage: number; source: 'api' | 'chat'; created_at: number } | null;
   offered_next?: number | null;
-  /** Set when the adopted card covers the current stage (6 means "wrap up"). */
+  /** Set when the adopted card covers the current stage (6 means "wrap up"); the coach then offers it in chat. */
   next_stage?: number | null;
 }
 

@@ -117,7 +117,7 @@ def test_shipped_coach_skill_is_valid_and_keeps_core_rules():
     prompt_skills.load_prompt_skill.cache_clear()
     try:
         prompt = research_coach.render_prompt_profile("research_coach")
-        assert "RESEARCH_TOPIC_COACH_SKILL_V5" in prompt
+        assert "RESEARCH_TOPIC_COACH_SKILL_V6" in prompt
         assert "never declare that a candidate has passed a stage" in prompt
         assert "may jump forward or back" in prompt
         assert "Do not claim you have searched" in prompt
@@ -137,7 +137,10 @@ def test_shipped_coach_skill_is_valid_and_keeps_core_rules():
         assert "Plain terms" in prompt
         assert "No praise openings" in prompt and "do not invent cases" in prompt
         assert "Never copy those labels" in prompt
-        assert "never say that you moved the learner to another stage" in prompt
+        assert "Never say that you moved the learner or that a stage is done" in prompt
+        # V6: the coach leads stage moves in conversation; a short yes moves on.
+        assert "「我們現在在第 N 階段」" in prompt and "they can simply reply 「好」" in prompt
+        assert "keep their exact wording" in prompt
         assert "Format: keep turns short" not in prompt
         assert "Runtime prompt payload" not in prompt
     finally:
@@ -259,7 +262,7 @@ async def test_context_includes_coach_skill_only_for_topic_finder():
         prompt_skills.load_prompt_skill.cache_clear()
 
     assert "Workspace：Topic Finder" in coach_prompt
-    assert "RESEARCH_TOPIC_COACH_SKILL_V5" in coach_prompt
+    assert "RESEARCH_TOPIC_COACH_SKILL_V6" in coach_prompt
     assert "本回合正式回答必須使用繁體中文" in coach_prompt
     assert "Topic Finder" not in chat_prompt
     assert "Tutor Profile：English Tutor" not in coach_prompt

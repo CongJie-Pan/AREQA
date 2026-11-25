@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ChatInput } from '@/components/ChatInput';
 import { TopicCardPanel } from '@/components/TopicCard';
-import { TopicStageNudge } from '@/components/TopicCard/StageNudge';
 import { UserPreferencesProvider } from '@/contexts/UserPreferencesContext';
 import { db } from '@/database/db';
 import { useTopicCard } from '@/hooks/useTopicCard';
@@ -60,12 +59,10 @@ function sse(answer: string): Response {
 
 function Harness() {
   const topicCard = useTopicCard(CONVERSATION, true);
-  const isStreaming = useChatStore((state) => state.isStreaming);
   return (
     <UserPreferencesProvider>
       <App>
         <TopicCardPanel topicCard={topicCard} />
-        <TopicStageNudge topicCard={topicCard} isStreaming={isStreaming} onSend={(text) => sendMessage(text, CONVERSATION)} />
         <ChatInput topicFinder onSend={(text) => sendMessage(text, CONVERSATION)} />
       </App>
     </UserPreferencesProvider>
@@ -178,22 +175,21 @@ describe('Topic Finder topic card flow', () => {
     expect(screen.getByText('預約很難排')).toBeInTheDocument();
   });
 
-  it('moves to the next stage from the chat nudge as a learner message', { timeout: 40_000 }, async () => {
+  it('moves on when the learner says yes in chat, with no move-on button', { timeout: 40_000 }, async () => {
     const card = { ...empty, mother_question: '學生願不願意接受 AI 先分流？' };
-    cardResponse = () => json({ stage: 3, version: 2, card, pending: null, history: [], next_stage: 4 });
+    cardResponse = () => json({ stage: 3, version: 2, card, pending: null, history: [], next_stage: 4, offer_open: true });
     render(<Harness />);
+    expect(await screen.findByText('學生願不願意接受 AI 先分流？')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /前往第/ })).not.toBeInTheDocument();
 
-    const nudge = await screen.findByRole('button', { name: '前往第 4 階段：幫候選題目找「看得見的證據」' });
-    // After the turn the backend has applied the request, so the card reloads at stage 4.
+    // The backend applies the yes before answering, so the card reloads at stage 4.
     cardResponse = () => json({ stage: 4, version: 2, card, pending: null, history: [], next_stage: null });
-    fireEvent.click(nudge);
+    fireEvent.change(screen.getByLabelText('訊息輸入框'), { target: { value: '好' } });
+    fireEvent.click(screen.getByLabelText('發送訊息'));
 
     await waitFor(() => expect(calls('/api/v1/stream')).toHaveLength(1), { timeout: 10_000 });
-    const payload = JSON.parse(String(calls('/api/v1/stream')[0][1]?.body));
-    expect(payload.messages.at(-1).content).toBe('好，我們進到第 4 階段：幫候選題目找「看得見的證據」');
-    expect(payload.conversation_kind).toBe('research_coach');
+    expect(JSON.parse(String(calls('/api/v1/stream')[0][1]?.body)).messages.at(-1).content).toBe('好');
     await waitFor(() => expect(document.querySelector('.areqa-topic-card-step-label')).toHaveTextContent('第 4 階段'), { timeout: 10_000 });
-    expect(screen.queryByRole('button', { name: /前往第/ })).not.toBeInTheDocument();
     expect(calls('/stage')).toHaveLength(0);
   });
 
