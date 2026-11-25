@@ -46,7 +46,7 @@ def test_base_persona_exposes_versioned_style_contract():
     assert "不主動把答覆深度改過深" in prompt
     assert "可以適當用一些Emoji表情符號" in prompt
     assert "先講白話直覺，再補必要術語" in prompt
-    assert "用分步方式降低理解負擔" in prompt
+    assert "把內容拆成少量重點降低理解負擔" in prompt
 
 
 def test_policy_overlays_reuse_shared_style_contract():
@@ -54,7 +54,7 @@ def test_policy_overlays_reuse_shared_style_contract():
 
     overlays = response_policy_overlays()
 
-    assert "用分步方式降低理解負擔" in overlays["SCAFFOLDED"]
+    assert "把內容拆成少量重點降低理解負擔" in overlays["SCAFFOLDED"]
     assert "先講白話直覺，再補必要術語" in overlays["TUTORING"]
 
 

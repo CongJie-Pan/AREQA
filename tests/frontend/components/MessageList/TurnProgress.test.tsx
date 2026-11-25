@@ -28,6 +28,13 @@ describe('TurnProgress', () => {
     expect(screen.getByRole('status')).toBeInTheDocument();
   });
 
+  it('describes planning as a response approach, not a teaching one', () => {
+    renderProgress([{ step: 'planning', startedAt: Date.now() }]);
+    const label = screen.getByTestId('turn-progress-label');
+    expect(label).toHaveTextContent('正在規劃回應方式');
+    expect(label).not.toHaveTextContent('教學');
+  });
+
   it('names the backend parsing step with the attachment count', () => {
     renderProgress([{ step: 'reading_attachments', current: 0, total: 3, startedAt: Date.now() }], true);
     expect(screen.getByTestId('turn-progress-label')).toHaveTextContent('正在讀取 3 份附件');

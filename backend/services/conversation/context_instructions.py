@@ -50,7 +50,7 @@ def _response_policy_instruction(
     }
     structure_rules = {
         ResponseStructure.SHORT: "格式要短：只保留本回合策略允許的必要內容。",
-        ResponseStructure.STEP_BY_STEP: "格式採分步解釋：每一步只處理一個理解點。",
+        ResponseStructure.STEP_BY_STEP: "格式採分點說明：每一點只處理一個理解點；中文依序編號用「一、」「二、」「三、」，不要寫「第一步」「第二步」或「Step 1」。",
         ResponseStructure.NOTE_DRAFT: "格式採筆記草稿：輸出可直接整理進筆記的段落或列點。",
         ResponseStructure.ARGUMENT: "格式採論述：先提出核心判斷，再展開理由與取捨。",
     }

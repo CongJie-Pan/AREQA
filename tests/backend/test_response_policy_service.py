@@ -810,7 +810,7 @@ def test_paper_auto_explain_instruction_contains_required_sections():
 
     assert "profile: AREQA_TEACHING_V1" in instruction
     assert "首段先貼合本回合學習模式" in instruction
-    assert "分步方式降低理解負擔" in instruction
+    assert "把內容拆成少量重點降低理解負擔" in instruction
     assert "先講白話直覺" in instruction
     assert "研究動機與目的" in instruction
     assert "研究方法與模型架構" in instruction

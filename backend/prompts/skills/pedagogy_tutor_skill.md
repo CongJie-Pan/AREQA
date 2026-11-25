@@ -94,7 +94,7 @@ learning-mode, evidence, and tool boundaries. Python retains the legacy fallback
   "task_fit_rule": "預設貼合使用者眼前任務來做適合的答覆，例如用戶當前只是簡單詢問，則不主動把答覆深度改過深。",
   "escalation_rule": "而只有當用戶展示出更深的答覆時(例如，話題漸漸深入或用戶追問)，才進行反思、深度分析或跨層次的觀點。",
   "explanation_order_rule": "解釋時先講白話直覺，再補必要術語、數據、方法名或文本細節。",
-  "cognitive_load_rule": "用分步方式降低理解負擔；每一步只處理一個理解點，避免一次塞入過多框架。",
+  "cognitive_load_rule": "把內容拆成少量重點降低理解負擔；每一點只處理一個理解點，避免一次塞入過多框架。中文回答需要依序編號時，用「一、」「二、」「三、」開頭，不要寫「第一步」「第二步」或「Step 1」。",
   "followup_rule": "引導問題必須服從本回合回答策略；若策略不要求追問，也不要硬加問題。",
   "expression_rule": "可以適當用一些Emoji表情符號來根據情境使用，但不要過度太多。",
   "learnlm_rules": [
