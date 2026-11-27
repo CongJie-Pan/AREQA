@@ -391,8 +391,10 @@ html[lang='en'] body {
   }
 }
 
+/* Lives inside the scroll list, which already supplies the horizontal padding. */
 .areqa-conversation-actions {
-  padding: 2px 8px 14px;
+  flex-shrink: 0;
+  padding: 0 0 14px;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -405,6 +407,10 @@ html[lang='en'] body {
   align-items: center;
   justify-content: space-between;
   width: 100%;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.15s ease;
+
+  &[data-scrolled='true'] { border-bottom-color: var(--areqa-subtle-border); }
 }
 
 .areqa-conversation-logo-wrapper {

@@ -76,6 +76,8 @@ export function ConversationList({
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  // Shows the divider under the pinned logo row only once the list has scrolled under it.
+  const [listScrolled, setListScrolled] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   /** null until the learner toggles the group; until then it follows whether pinned projects exist. */
   const [pinnedOpenChoice, setPinnedOpen] = useState<boolean | null>(null);
@@ -437,7 +439,7 @@ export function ConversationList({
       {/* Logo & Toggle Area */}
       <div className={externalSidebarToggle
         ? 'areqa-conversation-logo-row areqa-conversation-logo-row-external-toggle'
-        : 'areqa-conversation-logo-row'}>
+        : 'areqa-conversation-logo-row'} data-scrolled={listScrolled}>
         <button
           type="button"
           className="areqa-conversation-logo-wrapper"
@@ -470,58 +472,60 @@ export function ConversationList({
         </div>
       </div>
 
-      {/* Action Area */}
-      <div className="areqa-conversation-actions">
-        <button type="button" className="areqa-conversation-new-button" onClick={handleNew}>
-          <Plus size={18} />
-          <span>{t('newChat')}</span>
-        </button>
-        <button type="button" className="areqa-conversation-search-button" onClick={() => setSearchOpen(true)}>
-          <Search size={17} aria-hidden="true" />
-          <span>{t('conversationSearch')}</span>
-        </button>
-        {isSignedIn && (
-          <div className="areqa-conversation-projects-nav" data-active={projectsActive}>
-            <button type="button" className="areqa-conversation-search-button" aria-current={projectsActive ? 'page' : undefined}
-              onClick={() => openProjectPage(null)}>
-              <ProjectIcon size={17} />
-              <span>{t('projects')}</span>
-            </button>
-            <Tooltip title={t('projectCreate')} placement="right">
-              <button
-                type="button"
-                className="areqa-conversation-projects-create"
-                aria-label={t('projectCreate')}
-                onClick={() => setCreateProjectOpen(true)}
-              >
-                <Plus size={15} aria-hidden="true" />
-              </button>
-            </Tooltip>
-          </div>
-        )}
-        {mailboxEnabled && (
-          <button className="areqa-conversation-panel-button" onClick={() => onSelectGumPanel?.('mailbox')}>
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-              <MailIcon size={18} />
-              {unreadCount > 0 && (
-                <span style={{
-                  position: 'absolute', top: -4, right: -4,
-                  backgroundColor: 'red', color: 'white',
-                  borderRadius: '50%', width: 14, height: 14,
-                  fontSize: 10, display: 'flex',
-                  justifyContent: 'center', alignItems: 'center'
-                }}>
-                  {unreadCount > 9 ? '9+' : unreadCount}
-                </span>
-              )}
-            </div>
-            <span>{t('mailbox')}</span>
-          </button>
-        )}
-      </div>
-
       {/* List Area */}
-      <div className="areqa-conversation-scroll-list">
+      <div
+        className="areqa-conversation-scroll-list"
+        onScroll={(event) => setListScrolled(event.currentTarget.scrollTop > 0)}
+      >
+        {/* Action Area scrolls with the list; only the logo row stays pinned. */}
+        <div className="areqa-conversation-actions">
+          <button type="button" className="areqa-conversation-new-button" onClick={handleNew}>
+            <Plus size={18} />
+            <span>{t('newChat')}</span>
+          </button>
+          <button type="button" className="areqa-conversation-search-button" onClick={() => setSearchOpen(true)}>
+            <Search size={17} aria-hidden="true" />
+            <span>{t('conversationSearch')}</span>
+          </button>
+          {isSignedIn && (
+            <div className="areqa-conversation-projects-nav" data-active={projectsActive}>
+              <button type="button" className="areqa-conversation-search-button" aria-current={projectsActive ? 'page' : undefined}
+                onClick={() => openProjectPage(null)}>
+                <ProjectIcon size={17} />
+                <span>{t('projects')}</span>
+              </button>
+              <Tooltip title={t('projectCreate')} placement="right">
+                <button
+                  type="button"
+                  className="areqa-conversation-projects-create"
+                  aria-label={t('projectCreate')}
+                  onClick={() => setCreateProjectOpen(true)}
+                >
+                  <Plus size={15} aria-hidden="true" />
+                </button>
+              </Tooltip>
+            </div>
+          )}
+          {mailboxEnabled && (
+            <button className="areqa-conversation-panel-button" onClick={() => onSelectGumPanel?.('mailbox')}>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <MailIcon size={18} />
+                {unreadCount > 0 && (
+                  <span style={{
+                    position: 'absolute', top: -4, right: -4,
+                    backgroundColor: 'red', color: 'white',
+                    borderRadius: '50%', width: 14, height: 14,
+                    fontSize: 10, display: 'flex',
+                    justifyContent: 'center', alignItems: 'center'
+                  }}>
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </div>
+              <span>{t('mailbox')}</span>
+            </button>
+          )}
+        </div>
         {isLoading && conversations.length === 0 ? (
           <div className="areqa-conversation-loading">
             <Spin size="small" />

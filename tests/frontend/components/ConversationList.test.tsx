@@ -118,6 +118,25 @@ describe('ConversationList title states', () => {
     expect(screen.getByAltText('AREQA Logo')).toBeInTheDocument();
   });
 
+  it('pins only the logo row while the action buttons scroll with the list', () => {
+    const { container } = render(<App><ConversationList /></App>);
+    const logoRow = container.querySelector('.areqa-conversation-logo-row');
+    const scrollList = container.querySelector('.areqa-conversation-scroll-list');
+    expect(logoRow).toBeInTheDocument();
+    expect(scrollList).not.toContainElement(logoRow as HTMLElement);
+    expect(scrollList?.firstElementChild).toHaveClass('areqa-conversation-actions');
+    expect(within(scrollList as HTMLElement).getByText('New chat')).toBeInTheDocument();
+    expect(within(scrollList as HTMLElement).getByText('Search chats')).toBeInTheDocument();
+
+    expect(logoRow).toHaveAttribute('data-scrolled', 'false');
+    (scrollList as HTMLElement).scrollTop = 40;
+    fireEvent.scroll(scrollList as HTMLElement);
+    expect(logoRow).toHaveAttribute('data-scrolled', 'true');
+    (scrollList as HTMLElement).scrollTop = 0;
+    fireEvent.scroll(scrollList as HTMLElement);
+    expect(logoRow).toHaveAttribute('data-scrolled', 'false');
+  });
+
   beforeEach(() => {
     useConversationStore.setState({
       conversations: [],
