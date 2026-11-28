@@ -36,10 +36,6 @@ class Settings(BaseSettings):
     # too, so the earlier conversation forms a provider-cacheable prefix. Off by default.
     enable_stable_system_prefix: bool = False
     stable_system_prefix_rollout_percentage: float = 0.0
-    # AUTO search mode: offer web_search to the main model (two steps at most)
-    # instead of a routing call before every answer. Off by default.
-    enable_model_tool_routing: bool = False
-    model_tool_routing_rollout_percentage: float = 0.0
 
     # RAG Parameters
     rag_max_docs: int = 7

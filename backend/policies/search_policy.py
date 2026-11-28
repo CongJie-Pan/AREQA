@@ -17,8 +17,6 @@ class SearchReason(str, Enum):
     AUTHORITATIVE_SOURCE_REQUIRED = "AUTHORITATIVE_SOURCE_REQUIRED"
     AGENT_ROUTING_DISABLED = "AGENT_ROUTING_DISABLED"
     ATTACHMENT_CONTEXT_PRIORITY = "ATTACHMENT_CONTEXT_PRIORITY"
-    # AUTO search is left to the main model through the web_search tool.
-    MODEL_TOOL_ROUTING = "MODEL_TOOL_ROUTING"
 
 
 @dataclass(frozen=True, slots=True)

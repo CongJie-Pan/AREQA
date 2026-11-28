@@ -3,7 +3,7 @@
 - 日期：2026-11-28
 - 對照版本：opencode `eeeeaa0d`（2026-11-27），AREQA `6b13f9d`（master）
 - 上游文件：`docs/tech_docs/opencode_project_and_areqa_improvements.md`（初步規劃）
-- 狀態：P0–P6 都已實作（見下方進度表）。新功能都在 flag 後面，預設關閉，下一步是 staging 驗證和 eval
+- 狀態：P0–P5 已實作；P6 決定不做，已移除（見下方進度表）。新功能都在 flag 後面，預設關閉，下一步是 staging 驗證
 
 ### 實作進度（2026-11-28）
 
@@ -16,12 +16,7 @@
 | P2 stable prefix | 完成，eval 通過（flag 和 rollout 都是 0） | `6069aa2`、`e36a89d` | Q4 的 eval 已跑（`scripts/evaluate_stable_prefix.py`，gemini-3.8-flash）：遵守指示 B 24/24、A 23/24，沒有任何一項 B 比 A 差。**快取發現**：原本在「最新一輪前一則訊息」加 breakpoint，每輪都會重寫 7.6–8.4K tokens 的快取卻讀不回來，已改成靠 implicit caching，第 2 輪起可讀 ~4.1K tokens、寫入 0。A 版每輪都是 0 |
 | P4 AgentProfile | 完成 | `3ec49d0`、`f2e40cd` | **`services/teaching/profiles.py` 的 `ProfileCapabilities` 已經是 AgentProfile**（這份 spec 寫完前就有了）。所以不另外新增模組，改成加 `topic_card` capability。轉場提示依 Q2 存在 Redis（`profile_history.py`，TTL 7 天，讀取上限 300 ms，失敗時只是少了提示） |
 | P5 Outcome 重構 | 完成 | `ace7e2f`、`4bfd9c0` | 先錄 golden SSE（6 條路徑），重構後輸出完全相同。`_run_provider_step` + `StepOutcome` + `_AnswerPipeline`；`SSEAdapter.emit` 會自動編號 |
-| P6 工具迴圈 | 完成（flag 和 rollout 都是 0） | `2e5600b` | 依 Q3，第 1 步的文字直接串流。搜尋設定和結果格式抽到 `web_search_call.py`，兩條搜尋路徑共用。`memory_query` 還沒開放（照 spec） |
-
-**P6 已知限制**：
-- 走模型搜尋的回合，post-turn 拿到的 `use_web_search` 是 False，所以依賴這個值的後續處理不會觸發。
-- 第 1 步如果同時呼叫了生圖和搜尋，生圖會被丟掉。
-- ~~跟分類器的比較只有 log~~：已補上（`6c0e72f`）。走模型搜尋的回合會在背景跑一次分類器（shadow），`scripts/performance/report_model_search.py` 會算出兩者的一致率和 TTFA 對照。recall 目前只是跟分類器比的代理指標；spec 的淘汰條件要的是有標註的查詢集，這部分還沒建。
+| P6 工具迴圈 | **已移除（決定不做）** | 實作 `2e5600b`、`6c0e72f`，移除見下一個 commit | 2026-11-28 決定：搜尋與否維持由使用者選擇（搜尋模式），不讓主模型自己決定搜尋。工具迴圈、背景 shadow、比較報表和相關設定都已移除。保留的部分：P5 的重構，以及 `web_search_call.py` 的搜尋設定和結果格式（前置搜尋 `retrieval.py` 在用） |
 
 ---
 
@@ -255,6 +250,8 @@ def resolve_agent_profile(*, tutor_profile: object, prompt_profile: object) -> A
 **測試**：先為現有的 4 種路徑錄 golden SSE 序列（一般回答、length 截斷、context overflow 重試、生圖），重構前後都要完全一致。這一步先做，再開始重構。
 
 ### P6：有上限的工具迴圈（#3 + #5 的完整版）
+
+> **已決定不做（2026-11-28）**：搜尋維持由使用者選擇，不交給模型決定。以下細則保留作為紀錄。
 
 **範圍**：只在 `SearchMode.AUTO`、沒有附件、而且 flag `enable_model_tool_routing` 開啟時生效。其他模式維持現在的路徑。
 

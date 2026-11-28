@@ -29,10 +29,6 @@ from services.conversation.stream_request import (
 from services.conversation.prompt_cache import apply_document_cache_layout, apply_stable_prefix_layout, coverage_user_notice
 from services.conversation.stream_request import build_stream_request, tools_for_image_slots
 from services.conversation.response_boundary import StreamingResponseBoundaryFilter
-from services.conversation.web_search_call import (
-    SEARCH_FAILED_NOTE, WEB_SEARCH_TOOL_SCHEMA, format_web_results, search_tool_content,
-    web_search_arguments, web_search_config,
-)
 from services.memory_diagnostics import log_memory_snapshot
 
 logger = logging.getLogger(__name__)
@@ -180,7 +176,7 @@ class ConversationStreamService:
     async def _run_provider_step(
         self, *, messages: List[Dict[str, Any]], state: _StepState, pipeline: _AnswerPipeline,
         request: Any, trace: Any, conversation_id: str, target_model: str, max_tokens: int,
-        temperature: float, top_p: float, extra_body: Dict[str, Any], tools: list[dict[str, Any]] | None,
+        temperature: float, top_p: float, extra_body: Dict[str, Any], tools: list[dict[str, Any]],
         attempt: int, attachment_count: int,
     ) -> AsyncGenerator[str, None]:
         """Run one provider request and yield its answer frames.
@@ -189,9 +185,7 @@ class ConversationStreamService:
         in ``state``, whose ``outcome`` the caller reads once the step ends. A
         provider rejection propagates unchanged so the caller decides on a retry.
         The request and stream are always closed, including on ``aclose()``.
-        ``tools=None`` sends no tools, as in a follow-up step that must answer.
         """
-        tool_options: Dict[str, Any] = {} if tools is None else {"tools": tools, "tool_choice": "auto"}
         generation = None
         response = None
         try:
@@ -212,7 +206,8 @@ class ConversationStreamService:
                     temperature=temperature if temperature > 0 else 0.001,
                     top_p=top_p,
                     extra_body=extra_body,
-                    **tool_options,
+                    tools=tools,
+                    tool_choice="auto",
                 )
             )
             while not generation.done():
@@ -264,53 +259,6 @@ class ConversationStreamService:
                     except Exception as close_error:
                         logger.warning('orchestration.provider_close_failed error_type=%s', type(close_error).__name__)
 
-    async def _model_search_frames(
-        self, call: dict[str, str], *, user_id: str, conversation_id: str, tool_budget: Any,
-        trace: Any, result: dict[str, str],
-    ) -> AsyncGenerator[str, None]:
-        """Run the model-requested web search and yield the same frames as pre-answer search.
-
-        ``result["content"]`` receives the tool-result text for the follow-up
-        step. Invalid arguments, a missing key, budget refusal or provider
-        failure all yield a failure note there instead of raising, so the
-        follow-up step still answers.
-        """
-        result["content"] = SEARCH_FAILED_NOTE
-        try:
-            arguments = json.loads(call["arguments"] or "{}")
-        except (ValueError, TypeError):
-            arguments = None
-        query = arguments.get("query") if isinstance(arguments, dict) else None
-        if not isinstance(query, str) or not query.strip() or len(query) > 500:
-            logger.warning("orchestration.tool_arguments_invalid conversation_id=%s tool=web_search", conversation_id)
-            return
-        config = web_search_config()
-        if not config.api_key:
-            logger.warning("orchestration.model_search_unavailable conversation_id=%s reason=missing_key", conversation_id)
-            return
-        yield f"event: tool_started\ndata: {json.dumps({'tool_name': 'web_search', 'display_message': '🌐 正在查找最新資料'}, ensure_ascii=False)}\n\n"
-        try:
-            tool_result = await self.tool_registry.execute(
-                "web_search",
-                web_search_arguments(config, query=query.strip(), user_id=user_id, conversation_id=conversation_id),
-                tool_budget,
-            )
-            results, context_texts, sources_payload, _ = format_web_results(tool_result.content)
-        except Exception as exc:
-            logger.warning("orchestration.model_search_failed conversation_id=%s reason=%s",
-                           conversation_id, type(exc).__name__)
-            yield f"event: status\ndata: {json.dumps({'status': 'error', 'message': '⚠️ 聯網搜尋服務暫時無法使用，改用一般對話...'}, ensure_ascii=False)}\n\n"
-            return
-        if trace:
-            trace.increment_tool_call("web_search", tool_result.cache_status)
-        yield f"event: tool_completed\ndata: {json.dumps({'tool_name': 'web_search', 'display_message': '已完成資料查找', 'result_count': len(results), 'latency_ms': tool_result.latency_ms, 'cache_status': tool_result.cache_status}, ensure_ascii=False)}\n\n"
-        if sources_payload:
-            yield f"event: sources\ndata: {json.dumps(sources_payload, ensure_ascii=False)}\n\n"
-            yield f"event: status\ndata: {json.dumps({'status': 'sources_ready', 'message': f'已取得 {len(sources_payload)} 筆網路文獻'}, ensure_ascii=False)}\n\n"
-        logger.info("orchestration.model_search_completed conversation_id=%s result_count=%d source_count=%d latency_ms=%s",
-                    conversation_id, len(results), len(sources_payload), tool_result.latency_ms)
-        result["content"] = search_tool_content(context_texts)
-
     async def stream(
         self,
         *,
@@ -330,7 +278,6 @@ class ConversationStreamService:
         image_attachments: list[Any] | None = None,
         interface_language: str = "zh-TW",
         retrieval_context: str = "",
-        model_search: bool = False,
     ) -> AsyncGenerator[str, None]:
         """Yield filtered answer deltas and typed metadata events.
 
@@ -351,9 +298,6 @@ class ConversationStreamService:
             max_image_slots: Maximum image markers accepted for this turn.
                 General answers keep the legacy cap of two, while paper
                 overviews may allow more preverified PDF figures.
-            model_search: Offer ``web_search`` to the model instead of a routing
-                call before the answer. A search call runs once, then a second
-                step without tools answers from its results.
 
         Yields:
             Legacy-compatible SSE answer chunks, privacy-safe ``image_slot``
@@ -379,8 +323,6 @@ class ConversationStreamService:
             interface_language=interface_language, last_user_msg=last_user_msg,
         )
         tools = tools_for_image_slots(tools, max_image_slots)
-        if model_search:
-            tools = [*(tools or []), WEB_SEARCH_TOOL_SCHEMA]
         if tool_budget is None:
             from core import ToolBudget, ToolBudgetTracker
 
@@ -534,44 +476,6 @@ class ConversationStreamService:
                     # A disconnect closes only this generator; close the step explicitly
                     # so its provider request and stream never outlive the client.
                     await step.aclose()
-
-            if model_search:
-                search_call = next((call for call in step_state.tool_calls.values()
-                                    if call["name"] == "web_search"), None)
-                logger.info("orchestration.model_search_decision conversation_id=%s called=%s",
-                            conversation_id, search_call is not None)
-                if search_call is not None and not await request.is_disconnected():
-                    # Step 2: answer from the search result with tools disabled, so
-                    # the loop is bounded at two provider calls per turn.
-                    search_result: dict[str, str] = {}
-                    async for frame in self._model_search_frames(
-                        search_call, user_id=user_id, conversation_id=conversation_id,
-                        tool_budget=tool_budget, trace=trace, result=search_result,
-                    ):
-                        yield frame
-                    followup = [
-                        *messages,
-                        {"role": "assistant", "content": pipeline.accumulator or None, "tool_calls": [{
-                            "id": search_call["id"], "type": "function",
-                            "function": {"name": "web_search", "arguments": search_call["arguments"]},
-                        }]},
-                        {"role": "tool", "tool_call_id": search_call["id"], "content": search_result["content"]},
-                    ]
-                    # Other calls from step 1 (an image) are dropped with the step.
-                    step_state = _StepState()
-                    if trace:
-                        trace.increment_model_call("main_answer")
-                    step = self._run_provider_step(
-                        messages=followup, state=step_state, pipeline=pipeline, request=request, trace=trace,
-                        conversation_id=conversation_id, target_model=target_model, max_tokens=max_tokens,
-                        temperature=temperature, top_p=top_p, extra_body=extra_body, tools=None,
-                        attempt=1, attachment_count=attachment_count,
-                    )
-                    try:
-                        async for frame in step:
-                            yield frame
-                    finally:
-                        await step.aclose()
 
         except Exception as exc:
             if isinstance(exc, MemoryError):
