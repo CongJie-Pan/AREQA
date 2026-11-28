@@ -101,5 +101,39 @@ async def plan_search(service, *, last_user_msg, run_context, trace, effective_s
             lambda task: task.exception() if not task.cancelled() else None
         )
 
+    if search_decision.reason is SearchReason.MODEL_TOOL_ROUTING and last_user_msg:
+        # The classifier no longer gates this turn; running it off the critical
+        # path keeps a per-turn comparison with what the model decides to do.
+        task = asyncio.create_task(_model_search_shadow(service, last_user_msg, run_context))
+        _SHADOW_TASKS.add(task)
+        task.add_done_callback(_SHADOW_TASKS.discard)
 
     return search_decision, turn_plan, use_rag
+
+
+# Strong references: the event loop keeps only weak ones to running tasks.
+_SHADOW_TASKS: set[asyncio.Task] = set()
+
+
+async def _model_search_shadow(service, last_user_msg, run_context) -> None:
+    """Log what the routing classifier would have decided for a model-routed turn.
+
+    Joined with ``orchestration.model_search_decision`` per conversation by
+    ``scripts/performance/report_model_search.py``. Logs ids, the decision and
+    latency only; never the message.
+    """
+    started = asyncio.get_running_loop().time()
+    try:
+        decision = await service.tutor_agent.decide_search(
+            last_user_msg, run_context, client=service.client,
+            model=settings.model_policy_classifier, timeout_seconds=1.5,
+        )
+    except Exception as exc:
+        logger.warning("orchestration.model_search_shadow_failed conversation_id=%s reason=%s",
+                       run_context.conversation_id, type(exc).__name__)
+        return
+    logger.info(
+        "orchestration.model_search_shadow run_id=%s conversation_id=%s classifier_search=%s reason=%s latency_ms=%d",
+        run_context.run_id, run_context.conversation_id, decision.should_search, decision.reason.value,
+        int((asyncio.get_running_loop().time() - started) * 1000),
+    )

@@ -149,7 +149,9 @@ async def test_plan_search_skips_routing_call_under_model_tool_routing():
     from services.orchestration.routing import plan_search
 
     service = SimpleNamespace(
-        tutor_agent=SimpleNamespace(decide_search=AsyncMock()),
+        client=object(),
+        tutor_agent=SimpleNamespace(decide_search=AsyncMock(
+            return_value=SimpleNamespace(should_search=False, reason=SearchReason.INTERNAL_KNOWLEDGE_SUFFICIENT))),
         turn_plan_service=SimpleNamespace(plan=lambda **_: SimpleNamespace(
             route=SimpleNamespace(value="GENERAL_CHAT"), reason_code="X", max_foreground_model_calls=1)),
     )
@@ -160,4 +162,38 @@ async def test_plan_search_skips_routing_call_under_model_tool_routing():
         effective_search_mode=SearchMode.AUTO, has_attachments=False, auto_routing_enabled=True,
         use_rag=False, attachments=[], model_tool_routing=True)
     assert decision.reason is SearchReason.MODEL_TOOL_ROUTING and not decision.should_search
+    # The answer never waits on the classifier; only the background shadow calls it.
     service.tutor_agent.decide_search.assert_not_awaited()
+    import asyncio
+
+    from services.orchestration import routing
+    await asyncio.gather(*routing._SHADOW_TASKS)
+    service.tutor_agent.decide_search.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_model_routed_turn_logs_classifier_shadow_off_the_critical_path(caplog):
+    import asyncio
+
+    from policies import SearchDecision
+    from services.orchestration import routing
+
+    caplog.set_level(logging.INFO)
+    service = SimpleNamespace(
+        client=object(),
+        tutor_agent=SimpleNamespace(decide_search=AsyncMock(
+            return_value=SearchDecision(True, SearchReason.EXTERNAL_SEARCH_REQUIRED))),
+        turn_plan_service=SimpleNamespace(plan=lambda **_: SimpleNamespace(
+            route=SimpleNamespace(value="GENERAL_CHAT"), reason_code="X", max_foreground_model_calls=1)),
+    )
+    trace = SimpleNamespace(mark=lambda *_: None, increment_model_call=lambda *_: None)
+    run_context = SimpleNamespace(run_id="r1", conversation_id="c1", request_id="q")
+    decision, _, _ = await routing.plan_search(
+        service, last_user_msg="2026 年的諾貝爾物理獎是誰？", run_context=run_context, trace=trace,
+        effective_search_mode=SearchMode.AUTO, has_attachments=False, auto_routing_enabled=True,
+        use_rag=False, attachments=[], model_tool_routing=True)
+    assert decision.reason is SearchReason.MODEL_TOOL_ROUTING
+    await asyncio.gather(*routing._SHADOW_TASKS)
+    assert ("orchestration.model_search_shadow run_id=r1 conversation_id=c1 classifier_search=True "
+            "reason=EXTERNAL_SEARCH_REQUIRED") in caplog.text
+    assert "諾貝爾" not in caplog.text
