@@ -8,7 +8,6 @@ from config import settings
 from core import AgentEvent, EventType, SearchMode
 from policies import CapabilityPolicy
 from services.memory.gate import classify_user_message
-from services.orchestration.intake import record_interaction_timestamp
 from services.orchestration.utils import _localized_greeting_reply
 from services.query_policy.classifier import (
     apply_pdf_auto_explain_guardrail,
@@ -97,11 +96,6 @@ class OrchestrationExecutionMixin:
         )
         trace.mark("request_accepted")
         trace_logged = False
-        timestamp_recorded = (
-            await record_interaction_timestamp(user_id, conversation_id, run_context.run_id)
-            if last_user_msg
-            else False
-        )
 
         def log_trace() -> None:
             nonlocal trace_logged
@@ -209,7 +203,6 @@ class OrchestrationExecutionMixin:
                 conversation_id=conversation_id,
                 user_message=last_user_msg,
                 run_id=run_context.run_id,
-                skip_timestamp=timestamp_recorded,
             )
             trace.mark("turn_intake_finished")
             if self.client:

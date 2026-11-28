@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import re
 import logging
@@ -54,22 +53,6 @@ def _usage_counts(usage: Any) -> tuple[Any, Any, Any, Any]:
     prompt_details = read(usage, "prompt_tokens_details")
     return (read(usage, "prompt_tokens"), read(usage, "completion_tokens"),
             read(completion_details, "reasoning_tokens"), read(prompt_details, "cached_tokens"))
-
-
-
-def letter_task_id(
-    user_id: str,
-    conversation_id: str,
-    avatar_name: str,
-    source_text: str,
-) -> str:
-    """Build a stable idempotency key without retaining source text."""
-
-    from services.orchestration.intake import normalize_avatar_name
-
-    source_hash = hashlib.sha256(source_text.strip().encode("utf-8")).hexdigest()[:24]
-    raw = f"{user_id}|{conversation_id or ''}|{normalize_avatar_name(avatar_name)}|{source_hash}"
-    return f"letter-{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:32]}"
 
 
 class ConversationStreamService:
@@ -124,7 +107,7 @@ class ConversationStreamService:
             events, and one private accumulator event consumed by orchestration.
 
         Side Effects:
-            Calls the configured model and optional letter tool, and emits
+            Calls the configured model and optional image tool, and emits
             bounded structured lifecycle logs without raw prompts or markers.
             INFO provider_request_started/provider_stream_received record model,
             conversation ID, attempt and numeric counts. WARNING
@@ -154,8 +137,6 @@ class ConversationStreamService:
         image_marker_filter = ImageRequestMarkerFilter(max_slots=max_image_slots)
         output_filter = PublicAnswerFilter()
         boundary_filter = StreamingResponseBoundaryFilter()
-        tool_call_name = ""
-        tool_call_args = ""
         tool_calls: dict[int, dict[str, str]] = {}
         generated_blocks: list[dict] = []
         finish_reason: str | None = None
@@ -489,38 +470,7 @@ class ConversationStreamService:
                             continue
                         generated_blocks = ([{"type": "paragraph", "text": accumulator}] if accumulator else []) + [block]
                         yield f"event: answer_blocks\ndata: {json.dumps(generated_blocks, ensure_ascii=False)}\n\n"
-            elif call["name"] == "send_epistolary_letter":
-                tool_call_name, tool_call_args = call["name"], call["arguments"]
         if await request.is_disconnected():
             return
 
-        if tool_call_name == "send_epistolary_letter" and tool_call_args:
-            try:
-                arguments = json.loads(tool_call_args)
-                avatar_name = arguments.get("avatar_name", "Unknown")
-                result = await self.tool_registry.execute(
-                    "schedule_letter",
-                    {
-                        "user_id": user_id,
-                        "conversation_id": conversation_id,
-                        "user_message": last_user_msg,
-                        "avatar_name": avatar_name,
-                        "task_id": letter_task_id(
-                            user_id, conversation_id, avatar_name, last_user_msg
-                        ),
-                    },
-                    tool_budget,
-                )
-                if result.status == "ok":
-                    notice = f"\n\n*(系統通知：已為您呼叫 {avatar_name or '對應角色'}，信件正在撰寫中，預計 5 分鐘後寄達。)*"
-                    accumulator += notice
-                    yield f"data: {json.dumps({'choices': [{'delta': {'content': notice}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
-                else:
-                    logger.info(
-                        "orchestration.mail_tool_disabled user_id=%s conversation_id=%s",
-                        user_id,
-                        conversation_id,
-                    )
-            except Exception as exc:
-                logger.warning("orchestration.mail_tool_failed reason=%s", type(exc).__name__)
         yield f"event: accumulator\ndata: {json.dumps({'accumulator': accumulator, 'image_slots': [slot.to_payload() for slot in image_marker_filter.slots], 'generated_blocks': generated_blocks}, ensure_ascii=False)}\n\n"

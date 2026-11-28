@@ -228,8 +228,6 @@ async def memory_debug_endpoint(current_user_id: str = Depends(get_current_user)
         "gum_proposition_count": len(gum_props),
     }
 
-from mailbox_store import get_mailbox_store
-
 class EditMemoryRequest(BaseModel):
     text: str
 
@@ -528,4 +526,3 @@ async def clear_memory_endpoint(current_user_id: str = Depends(get_current_user)
     await clear_gum_memory(current_user_id)
     return {"status": "ok", "message": "Memory cleared successfully"}
 
-from services.notifications.connections import ws_manager

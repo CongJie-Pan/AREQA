@@ -1,4 +1,4 @@
-"""Diagnostics, retrieval, action-log, and proactive-check routes."""
+"""Diagnostics, retrieval, and action-log routes."""
 
 from __future__ import annotations
 
@@ -343,43 +343,12 @@ async def log_action(req: ActionLogRequest, current_user_id: str = Depends(get_c
 
     from services.memory.store.service import get_global_store
     store = get_global_store()
-    if req.action_type == "compeer_cooldown_reset":
-        from config import settings
-
-        if not settings.enable_compeer_dev_controls:
-            raise HTTPException(status_code=403, detail="ComPeer dev controls are disabled")
-        import services.compeer.runtime as compeer
-
-        deleted = await compeer.clear_cooldown(current_user_id)
-        return {"status": "ok", "cooldown_deleted": deleted}
-
     if store:
         from services.memory.gate import apply_action_gate
         asyncio.create_task(apply_action_gate(store, current_user_id, req.action_type, req.context))
 
-    if req.action_type == "scroll":
-        # Pure UI telemetry belongs to behavior_signals only; it must not enter prompt memory.
-        pass
-    elif req.action_type == "compeer_rejected":
-        import services.compeer.runtime as compeer
-        target_user = current_user_id
-        learner_state = await store.get_learner_state(target_user) if store else "default"
-        await compeer.set_cooldown(target_user, state=learner_state)
-        print(f"[ComPeer] User '{target_user}' rejected popup, entering cooldown.")
-    else:
-        # Other client actions are behavior signals unless a reflection pipeline promotes them.
-        pass
+    # Client actions are behavior signals only; they must not enter prompt memory
+    # unless a reflection pipeline promotes them.
 
     return {"status": "ok"}
 
-@router.get("/api/v1/proactive-check")
-async def proactive_check_endpoint(current_user_id: str = Depends(get_current_user)):
-    user_id = current_user_id
-    from services.memory.store.service import get_global_store
-    store = get_global_store()
-    if store:
-        alert_content = await store.get_and_clear_pending_alert(user_id)
-        if alert_content:
-            print(f"[EDF-LOG] proactive-check endpoint returning alert: {alert_content}")
-            return {"has_alert": True, "content": alert_content}
-    return {"has_alert": False}

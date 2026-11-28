@@ -44,13 +44,6 @@ vi.mock('@/services/database', () => ({
   },
 }));
 
-vi.mock('@/store/mailbox', () => ({
-  useMailboxStore: () => ({
-    unreadCount: 0,
-    fetchMails: vi.fn(),
-  }),
-}));
-
 vi.mock('@/store/features', () => ({
   useFeatureStore: () => false,
 }));
@@ -69,7 +62,6 @@ vi.mock('@/contexts/UserPreferencesContext', () => ({
         yesterday: 'Yesterday',
         noConversations: 'No conversations',
         closeSidebar: 'Close sidebar',
-        mailbox: 'Mailbox',
         conversationMenu: 'Conversation menu',
         rename: 'Rename',
         pin: 'Pin',

@@ -109,8 +109,6 @@ vi.mock('@/components/ChatInput', () => ({
 }));
 vi.mock('@/components/TextSelectionToolbar', () => ({ TextSelectionToolbar: () => null }));
 vi.mock('@/components/GumPanel', () => ({ GumPanel: () => null }));
-vi.mock('@/components/MailboxPanel', () => ({ MailboxPanel: () => null }));
-vi.mock('@/components/ProactiveManager', () => ({ ProactiveManager: () => null }));
 vi.mock('@/utils/exportChat', () => ({
   exportToMarkdown: vi.fn(),
   exportToDocx: vi.fn(),

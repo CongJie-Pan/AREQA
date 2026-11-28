@@ -35,7 +35,6 @@ vi.mock('next/image', () => ({
   default: (props: React.ImgHTMLAttributes<HTMLImageElement>) => <img {...props} alt={props.alt ?? ''} />,
 }));
 vi.mock('@/components/Auth', () => ({ UserAuthUI: () => <div /> }));
-vi.mock('@/store/mailbox', () => ({ useMailboxStore: () => ({ unreadCount: 0, fetchMails: vi.fn() }) }));
 
 const empty = { pain_point: '', mother_question: '', candidates: [], operationalization: [], discarded: [], objections: [] };
 const mainCard = {

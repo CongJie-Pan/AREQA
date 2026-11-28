@@ -54,7 +54,6 @@ BEHAVIOR_ACTIONS = {
     "focus",
     "blur",
     "hint_opened",
-    "compeer_rejected",
 }
 
 EXPLICIT_MEMORY_PATTERNS = [

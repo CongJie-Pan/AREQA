@@ -64,18 +64,7 @@ def build_stream_request(*, force_think: bool, repetition_penalty: float,
             ),
         },
     }
-    tools = [image_tool, {
-        "type": "function",
-        "function": {
-            "name": "send_epistolary_letter",
-            "description": "Schedule a requested avatar letter after answering the user in chat.",
-            "parameters": {
-                "type": "object",
-                "properties": {"avatar_name": {"type": "string"}},
-                "required": ["avatar_name"],
-            },
-        },
-    }]
+    tools = [image_tool]
     return target_model, extra_body, tools, has_pdf
 
 

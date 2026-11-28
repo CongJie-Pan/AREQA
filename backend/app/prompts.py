@@ -16,12 +16,6 @@ class RuntimeFeatureResponse(BaseModel):
     """Browser-safe product feature flags exposed at runtime.
 
     Attributes:
-        mailbox: Whether the mailbox product surface should be visible and its
-            read APIs should be callable.
-        compeer: Whether ComPeer browser behavior should be mounted.
-        compeerTelemetry: Whether the browser may send ComPeer behavior
-            telemetry. This is constrained by `compeer` so telemetry cannot run
-            while the broader ComPeer surface is archived.
         conversationHistoryDebugLogs: Whether the browser should emit safe
             diagnostics for conversation history loading and switching.
 
@@ -30,9 +24,6 @@ class RuntimeFeatureResponse(BaseModel):
         older clients do not need response transformation logic.
     """
 
-    mailbox: bool
-    compeer: bool
-    compeerTelemetry: bool
     conversationHistoryDebugLogs: bool
 
 

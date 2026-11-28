@@ -28,11 +28,9 @@ import { useTopicCard } from '@/hooks/useTopicCard';
 import { TopicBranchUnavailableError, exploreCandidateInBranch } from '@/services/topicFinderBranch';
 import { TextSelectionToolbar } from '@/components/TextSelectionToolbar';
 import { GumPanel } from '@/components/GumPanel';
-import { MailboxPanel } from '@/components/MailboxPanel';
 import { NotesPanel } from '@/components/NotesPanel';
 import { ProjectsPanel } from '@/components/Projects';
 import { useProjectStore } from '@/store/projects';
-import { ProactiveManager } from '@/components/ProactiveManager';
 import { AuthPrompt } from '@/components/Auth';
 import { LiveTutorPanel } from '@/components/LiveTutor';
 import { supabase } from '@/lib/supabase';
@@ -142,8 +140,6 @@ export function ChatContainer({ className, openingShare = false }: ChatContainer
     startX: number;
     startWidth: number;
   } | null>(null);
-  const mailboxEnabled = useFeatureStore((state) => state.mailbox);
-  const compeerEnabled = useFeatureStore((state) => state.compeer);
   const fetchFeatures = useFeatureStore((state) => state.fetchFeatures);
   const user = useAuthStore((state) => state.user);
   const isAuthReady = useAuthStore((state) => state.isInitialized);
@@ -264,12 +260,6 @@ export function ChatContainer({ className, openingShare = false }: ChatContainer
   useEffect(() => {
     void fetchFeatures();
   }, [fetchFeatures]);
-
-  useEffect(() => {
-    if (!mailboxEnabled && gumPanelType === 'mailbox') {
-      setGumPanelType(null);
-    }
-  }, [gumPanelType, mailboxEnabled]);
 
   useEffect(() => {
     const viewport = window.visualViewport;
@@ -1042,9 +1032,7 @@ export function ChatContainer({ className, openingShare = false }: ChatContainer
             ? ({ '--areqa-avatar-pane-width': `${avatarPaneWidth}px` } as React.CSSProperties)
             : undefined}
         >
-          {mailboxEnabled && gumPanelType === 'mailbox' ? (
-            <MailboxPanel onClose={() => setGumPanelType(null)} />
-          ) : gumPanelType === 'notes' ? (
+          {gumPanelType === 'notes' ? (
             <NotesPanel onClose={() => setGumPanelType(null)} />
           ) : gumPanelType === 'projects' ? (
             <ProjectsPanel
@@ -1337,9 +1325,6 @@ export function ChatContainer({ className, openingShare = false }: ChatContainer
 
       {/* Text Selection Toolbar */}
       <TextSelectionToolbar />
-
-      {/* Proactive Polling & Telemetry */}
-      {(mailboxEnabled || compeerEnabled) && <ProactiveManager />}
 
       <AuthPrompt open={showAuthPrompt && !user} onDismiss={dismissAuthPrompt} />
     </div>

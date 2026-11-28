@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cloud API probe for AREQA's auth, Redis, mailbox, and cold-memory paths.
+"""Cloud API probe for AREQA's auth, Redis, and cold-memory paths.
 
 This runner intentionally lives outside pytest so it never hits cloud services
 from normal local or CI test runs by accident.
@@ -52,13 +52,8 @@ class ProbeState:
     request_timeout: int
     request_retries: int
     redis_client: redis.Redis | None = None
-    delayed_task_id: str | None = None
-    conversation_id: str = ""
-    created_mail_id: str | None = None
     db_propositions_exists: bool = False
     db_vec_memory_exists: bool = False
-    db_mailbox_messages_exists: bool = False
-    db_mailbox_delayed_tasks_exists: bool = False
     results: list[ProbeResult] = field(default_factory=list)
 
     def record(self, name: str, ok: bool, detail: str = "") -> None:
@@ -174,18 +169,12 @@ def probe_database(state: ProbeState, database_url: str) -> None:
             state.db_propositions_exists = cur.fetchone()[0] is not None
             cur.execute("SELECT to_regclass('public.vec_memory')")
             state.db_vec_memory_exists = cur.fetchone()[0] is not None
-            cur.execute("SELECT to_regclass('public.mailbox_messages')")
-            state.db_mailbox_messages_exists = cur.fetchone()[0] is not None
-            cur.execute("SELECT to_regclass('public.mailbox_delayed_tasks')")
-            state.db_mailbox_delayed_tasks_exists = cur.fetchone()[0] is not None
     state.record("PostgreSQL propositions table", state.db_propositions_exists)
     state.record(
         "PostgreSQL vec_memory table",
         True,
         "present" if state.db_vec_memory_exists else "missing; vector search should degrade",
     )
-    state.record("PostgreSQL mailbox_messages table", state.db_mailbox_messages_exists)
-    state.record("PostgreSQL mailbox_delayed_tasks table", state.db_mailbox_delayed_tasks_exists)
 
 
 def probe_api_auth(state: ProbeState) -> None:
@@ -196,24 +185,14 @@ def probe_api_auth(state: ProbeState) -> None:
         state.record("Backend /docs", False, str(exc))
 
     try:
-        unauth = request_with_retries(state, "GET", f"{state.backend_url}/api/v1/mailbox")
+        unauth = request_with_retries(state, "GET", f"{state.backend_url}/api/v1/memory")
         state.record(
-            "Mailbox rejects missing token",
+            "Memory rejects missing token",
             unauth.status_code in (401, 403),
             f"status={unauth.status_code}",
         )
     except AssertionError as exc:
-        state.record("Mailbox rejects missing token", False, str(exc))
-
-    try:
-        _, mailbox = request_json(state, "GET", "/api/v1/mailbox")
-        state.record(
-            "Mailbox accepts test JWT",
-            isinstance(mailbox, dict) and "mails" in mailbox and "unread_count" in mailbox,
-            f"mails={len(mailbox.get('mails', [])) if isinstance(mailbox, dict) else 'n/a'}",
-        )
-    except AssertionError as exc:
-        state.record("Mailbox accepts test JWT", False, str(exc))
+        state.record("Memory rejects missing token", False, str(exc))
 
     try:
         _, memory = request_json(state, "GET", "/api/v1/memory")
@@ -233,11 +212,10 @@ def redis_json(client: redis.Redis, key: str) -> Any:
     return json.loads(raw)
 
 
-def run_write_probe(state: ProbeState, delayed_wait_seconds: int, skip_delayed_wait: bool, memory_events: int) -> None:
+def run_write_probe(state: ProbeState, memory_events: int) -> None:
     if state.redis_client is None:
         raise RuntimeError("Redis client is not initialized")
 
-    state.conversation_id = f"api-e2e-{state.run_id}"
     action_context = {
         "run_id": state.run_id,
         "probe": "cloud api memory probe",
@@ -267,90 +245,7 @@ def run_write_probe(state: ProbeState, delayed_wait_seconds: int, skip_delayed_w
     hot_text = json.dumps(hot, ensure_ascii=False) if hot else ""
     state.record("Redis hot memory contains RUN_ID", state.run_id in hot_text, hot_key)
 
-    mail_content = f"{state.run_id} cloud api mailbox probe"
-    _, sent = request_json(
-        state,
-        "POST",
-        "/api/v1/mailbox/send",
-        json={
-            "content": mail_content,
-            "recipient": "柏拉圖",
-            "conversation_id": state.conversation_id,
-        },
-    )
-    state.created_mail_id = sent.get("mail_id")
-    state.record("POST /api/v1/mailbox/send", sent.get("status") == "success", f"mail_id={state.created_mail_id}")
-
-    _, mailbox = request_json(state, "GET", "/api/v1/mailbox")
-    user_mails = [
-        mail
-        for mail in mailbox.get("mails", [])
-        if mail.get("conversation_id") == state.conversation_id and mail.get("sender") == "User"
-    ]
-    state.record("Mailbox user mail visible via API", len(user_mails) == 1, f"matches={len(user_mails)}")
-    state.record(
-        "Mailbox user mail marked read",
-        bool(user_mails and user_mails[0].get("is_read") is True),
-    )
-
-    mailbox_key = f"areqa:mailbox:{state.test_user_id}"
-    mailbox_raw = redis_json(state.redis_client, mailbox_key)
-    mailbox_text = json.dumps(mailbox_raw, ensure_ascii=False) if mailbox_raw else ""
-    state.record("Redis mailbox contains RUN_ID", state.run_id in mailbox_text, mailbox_key)
-
-    delayed_key = f"areqa:delayed_mail:{state.test_user_id}"
-    delayed_tasks = state.redis_client.zrange(delayed_key, 0, -1, withscores=True)
-    matching_tasks = []
-    for task_json, score in delayed_tasks:
-        try:
-            task = json.loads(task_json)
-        except json.JSONDecodeError:
-            continue
-        if task.get("conversation_id") == state.conversation_id:
-            matching_tasks.append((task, score))
-    if matching_tasks:
-        state.delayed_task_id = matching_tasks[-1][0].get("task_id")
-    state.record(
-        "Redis delayed queue contains task",
-        len(matching_tasks) == 1,
-        f"matches={len(matching_tasks)} task_id={state.delayed_task_id}",
-    )
-    probe_mailbox_persistence(state, expect_delayed=True)
-
-    if skip_delayed_wait:
-        state.record("Delayed delivery wait", True, "skipped by --skip-delayed-wait")
-    else:
-        wait_for_delayed_reply(state, delayed_wait_seconds)
-        probe_mailbox_persistence(state, expect_delayed=True)
-
     probe_cold_memory(state)
-
-
-def wait_for_delayed_reply(state: ProbeState, timeout: int) -> None:
-    deadline = time.time() + timeout
-    first_count = None
-    final_matches: list[dict[str, Any]] = []
-    while time.time() < deadline:
-        _, mailbox = request_json(state, "GET", "/api/v1/mailbox")
-        final_matches = [
-            mail
-            for mail in mailbox.get("mails", [])
-            if mail.get("conversation_id") == state.conversation_id and mail.get("sender") != "User"
-        ]
-        if first_count is None and final_matches:
-            first_count = len(final_matches)
-            time.sleep(15)
-            _, mailbox_again = request_json(state, "GET", "/api/v1/mailbox")
-            final_matches = [
-                mail
-                for mail in mailbox_again.get("mails", [])
-                if mail.get("conversation_id") == state.conversation_id and mail.get("sender") != "User"
-            ]
-            break
-        time.sleep(10)
-
-    state.record("Delayed avatar reply delivered", len(final_matches) >= 1, f"matches={len(final_matches)}")
-    state.record("Delayed avatar reply not duplicated", len(final_matches) == 1, f"matches={len(final_matches)}")
 
 
 def probe_cold_memory(state: ProbeState) -> None:
@@ -398,60 +293,12 @@ def find_cold_memory_rows(state: ProbeState) -> list[tuple[Any, ...]]:
             return cur.fetchall()
 
 
-def probe_mailbox_persistence(state: ProbeState, *, expect_delayed: bool) -> None:
-    if not state.db_mailbox_messages_exists:
-        state.record("PostgreSQL mailbox_messages contain RUN_ID", False, "public.mailbox_messages is missing")
-        return
-    if expect_delayed and not state.db_mailbox_delayed_tasks_exists:
-        state.record("PostgreSQL mailbox_delayed_tasks contain task", False, "public.mailbox_delayed_tasks is missing")
-        return
-
-    db_url = psycopg2_url(os.environ["DATABASE_URL"])
-    with psycopg2.connect(db_url, connect_timeout=15) as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT mail_id, content
-                FROM mailbox_messages
-                WHERE CAST(user_id AS text) = %s
-                  AND content ILIKE %s
-                ORDER BY created_at DESC
-                LIMIT 5
-                """,
-                (state.test_user_id, f"%{state.run_id}%"),
-            )
-            mail_rows = cur.fetchall()
-            delayed_rows = []
-            if expect_delayed:
-                cur.execute(
-                    """
-                    SELECT task_id, status
-                    FROM mailbox_delayed_tasks
-                    WHERE CAST(user_id AS text) = %s
-                      AND payload::text ILIKE %s
-                    ORDER BY created_at DESC
-                    LIMIT 5
-                    """,
-                    (state.test_user_id, f"%{state.run_id}%"),
-                )
-                delayed_rows = cur.fetchall()
-    state.record("PostgreSQL mailbox_messages contain RUN_ID", len(mail_rows) > 0, f"matches={len(mail_rows)}")
-    if expect_delayed:
-        state.record(
-            "PostgreSQL mailbox_delayed_tasks contain task",
-            len(delayed_rows) > 0,
-            f"matches={len(delayed_rows)} statuses={[row[1] for row in delayed_rows]}",
-        )
-
-
 def cleanup(state: ProbeState) -> None:
     print("Cleanup:")
     if state.redis_client is not None:
         keys = [
             f"areqa:hot_memory:{state.test_user_id}",
             f"areqa:user_profile:{state.test_user_id}",
-            f"areqa:mailbox:{state.test_user_id}",
-            f"areqa:delayed_mail:{state.test_user_id}",
         ]
         deleted = state.redis_client.delete(*keys)
         state.record("Redis cleanup", True, f"deleted_keys={deleted}")
@@ -459,23 +306,6 @@ def cleanup(state: ProbeState) -> None:
     db_url = psycopg2_url(os.environ["DATABASE_URL"])
     with psycopg2.connect(db_url, connect_timeout=15) as conn:
         with conn.cursor() as cur:
-            if state.db_mailbox_delayed_tasks_exists:
-                cur.execute(
-                    "DELETE FROM mailbox_delayed_tasks WHERE CAST(user_id AS text) = %s",
-                    (state.test_user_id,),
-                )
-                deleted_delayed_tasks = cur.rowcount
-            else:
-                deleted_delayed_tasks = 0
-            if state.db_mailbox_messages_exists:
-                cur.execute(
-                    "DELETE FROM mailbox_messages WHERE CAST(user_id AS text) = %s",
-                    (state.test_user_id,),
-                )
-                deleted_mailbox_messages = cur.rowcount
-            else:
-                deleted_mailbox_messages = 0
-
             if state.db_propositions_exists:
                 cur.execute(
                     """
@@ -520,7 +350,6 @@ def cleanup(state: ProbeState) -> None:
         "PostgreSQL cleanup",
         True,
         (
-            f"mailbox_messages={deleted_mailbox_messages} delayed_tasks={deleted_delayed_tasks} "
             f"links={deleted_links} vectors={deleted_vectors} "
             f"observations={deleted_observations} propositions={deleted_propositions}"
         ),
@@ -546,8 +375,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-id", default=f"api-e2e-{time.strftime('%Y%m%d-%H%M%S')}")
     parser.add_argument("--write", action="store_true", help="Write isolated test data to cloud Redis/PostgreSQL through APIs.")
     parser.add_argument("--cleanup", action=argparse.BooleanOptionalAction, default=True, help="Clean up Redis/DB test data after write probe.")
-    parser.add_argument("--skip-delayed-wait", action="store_true", help="Verify delayed queue only; do not wait for delivery.")
-    parser.add_argument("--delayed-wait-seconds", type=int, default=420, help="Max wait for delayed mailbox delivery.")
     parser.add_argument("--memory-events", type=int, default=18, help="Number of log_action events to send so GUM batch processing can produce cold memory.")
     parser.add_argument("--request-timeout", type=int, default=90, help="HTTP request timeout in seconds.")
     parser.add_argument("--request-retries", type=int, default=2, help="HTTP retry attempts for cloud cold starts.")
@@ -582,11 +409,11 @@ def main() -> int:
         probe_api_auth(state)
 
         if args.write:
-            run_write_probe(state, args.delayed_wait_seconds, args.skip_delayed_wait, args.memory_events)
+            run_write_probe(state, args.memory_events)
             if args.cleanup:
                 cleanup(state)
         else:
-            state.record("Write probe", True, "skipped; pass --write to exercise mailbox/memory writes")
+            state.record("Write probe", True, "skipped; pass --write to exercise memory writes")
 
         failed = [result for result in state.results if not result.ok]
         print(f"Summary: {len(state.results) - len(failed)} passed, {len(failed)} failed")
@@ -606,8 +433,6 @@ def print_next_actions(state: ProbeState, failed: list[ProbeResult]) -> None:
         print("  - Configure JWT_SECRET in the running backend environment, then redeploy/restart the API.")
     if any(result.name == "PostgreSQL propositions table" for result in failed):
         print("  - Apply the cold-memory PostgreSQL schema/migration that creates public.propositions.")
-    if any(result.name.startswith("PostgreSQL mailbox_") for result in failed):
-        print("  - Apply the mailbox persistence PostgreSQL schema/migration that creates public.mailbox_messages and public.mailbox_delayed_tasks.")
     if not state.db_vec_memory_exists:
         print("  - Optional: create public.vec_memory for vector search; API should still degrade without it.")
     if any("failed after" in result.detail for result in failed):

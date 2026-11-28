@@ -11,7 +11,6 @@ from dataclasses import dataclass
 import json
 import logging
 import re
-import time
 from typing import Any
 
 
@@ -92,27 +91,14 @@ class TurnIntakeService:
         conversation_id: str,
         user_message: str,
         run_id: str,
-        skip_timestamp: bool = False,
     ) -> TurnIntakeResult:
-        """Persist interaction, trusted evidence, and scoped roleplay state."""
+        """Persist trusted evidence and scoped roleplay state."""
 
         from services.memory.store.service import get_global_store
-        from services.compeer.runtime import set_last_interaction_time
         from services.memory.ingestion.service import (
             build_user_evidence,
             create_memory_ingestion_service,
         )
-
-        if not skip_timestamp:
-            try:
-                await set_last_interaction_time(user_id, time.time())
-            except Exception as exc:
-                logger.warning(
-                    "orchestration.interaction_timestamp_failed run_id=%s conversation_id=%s reason=%s",
-                    run_id,
-                    conversation_id,
-                    type(exc).__name__,
-                )
 
         store = get_global_store()
         if not store:
@@ -175,20 +161,3 @@ class TurnIntakeService:
             )
         return TurnIntakeResult(True, state, reason)
 
-
-async def record_interaction_timestamp(user_id: str, conversation_id: str, run_id: str) -> bool:
-    """Record the user interaction timestamp before the first SSE event."""
-
-    try:
-        from services.compeer.runtime import set_last_interaction_time
-
-        await set_last_interaction_time(user_id, time.time())
-        return True
-    except Exception as exc:
-        logger.warning(
-            "orchestration.interaction_timestamp_failed run_id=%s conversation_id=%s reason=%s",
-            run_id,
-            conversation_id,
-            type(exc).__name__,
-        )
-        return False

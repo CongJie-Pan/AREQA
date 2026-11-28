@@ -153,15 +153,6 @@ try:
         _memory_source_id,
         _update_explicit_profile_memory,
     )
-    from app.routes.mailbox import (
-        router as mailbox_router,
-        SendMailRequest,
-        fetch_mailbox,
-        read_mail_endpoint,
-        send_mail_endpoint,
-        _ensure_mailbox_feature_enabled,
-        _mailbox_reply_task_id,
-    )
 except ModuleNotFoundError:
     from backend.app.routes.memory import (
         router as memory_router,
@@ -188,19 +179,8 @@ except ModuleNotFoundError:
         _memory_source_id,
         _update_explicit_profile_memory,
     )
-    from backend.app.routes.mailbox import (
-        router as mailbox_router,
-        SendMailRequest,
-        fetch_mailbox,
-        read_mail_endpoint,
-        send_mail_endpoint,
-        _ensure_mailbox_feature_enabled,
-        _mailbox_reply_task_id,
-    )
-from mailbox_store import get_mailbox_store
 
 app.include_router(memory_router)
-app.include_router(mailbox_router)
 
 try:
     from app.routes.diagnostics import (
@@ -212,16 +192,9 @@ try:
         log_action,
         log_share_debug,
         parse_and_decompose_query,
-        proactive_check_endpoint,
         reorder_for_attention,
         retrieve_endpoint,
         _safe_share_debug_context,
-    )
-    from app.routes.notifications import (
-        router as notifications_router,
-        generate_ws_ticket,
-        ws_manager,
-        ws_notifications,
     )
     from app.routes.realtime import router as realtime_router
     from app.routes.generated_images import router as generated_images_router
@@ -253,16 +226,9 @@ except ModuleNotFoundError:
         log_action,
         log_share_debug,
         parse_and_decompose_query,
-        proactive_check_endpoint,
         reorder_for_attention,
         retrieve_endpoint,
         _safe_share_debug_context,
-    )
-    from backend.app.routes.notifications import (
-        router as notifications_router,
-        generate_ws_ticket,
-        ws_manager,
-        ws_notifications,
     )
     from backend.app.routes.realtime import router as realtime_router
     from backend.app.routes.generated_images import router as generated_images_router
@@ -286,7 +252,6 @@ except ModuleNotFoundError:
     )
 
 app.include_router(diagnostics_router)
-app.include_router(notifications_router)
 app.include_router(realtime_router)
 app.include_router(generated_images_router)
 app.include_router(research_coach_router)
@@ -300,36 +265,24 @@ async def get_runtime_features() -> RuntimeFeatureResponse:
     """Return browser-safe runtime feature flags from backend settings.
 
     Returns:
-        RuntimeFeatureResponse: Public feature state for browser-visible
-            mailbox and ComPeer surfaces.
+        RuntimeFeatureResponse: Public browser-visible feature state.
 
     Side Effects:
         Emits `features.runtime_served` with safe boolean metadata only. The log
-        contains no user identifiers, mailbox content, prompts, credentials, or
-        tokens because this endpoint is public and not user-scoped.
+        contains no user identifiers, prompts, credentials, or tokens because
+        this endpoint is public and not user-scoped.
     """
 
     from config import settings
 
-    mailbox_enabled = bool(settings.enable_mailbox_feature)
-    compeer_enabled = bool(settings.enable_compeer_feature)
-    compeer_telemetry_enabled = (
-        compeer_enabled and bool(settings.enable_compeer_telemetry)
-    )
     conversation_history_debug_logs = bool(
         settings.enable_conversation_history_debug_logs
     )
     logger.info(
-        "features.runtime_served mailbox=%s compeer=%s compeer_telemetry=%s conversation_history_debug_logs=%s",
-        mailbox_enabled,
-        compeer_enabled,
-        compeer_telemetry_enabled,
+        "features.runtime_served conversation_history_debug_logs=%s",
         conversation_history_debug_logs,
     )
     return RuntimeFeatureResponse(
-        mailbox=mailbox_enabled,
-        compeer=compeer_enabled,
-        compeerTelemetry=compeer_telemetry_enabled,
         conversationHistoryDebugLogs=conversation_history_debug_logs,
     )
 
@@ -423,19 +376,15 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     from services.memory.store.service import init_global_store
-    from mailbox_store import init_mailbox_store
     from job_store import init_agent_job_store
     from redis_client import log_redis_open_status
     log_memory_snapshot("startup")
     
     # Init store
     store = init_global_store(budget_limit=1000000)
-    # await store.clear_all_pending_alerts("default_user") # Skipped for multi-tenant
     print("Memory Store initialized successfully.")
     await log_redis_open_status()
     
-    init_mailbox_store()
-    print("Mailbox Store initialized successfully.")
     init_agent_job_store()
     print("Agent Job Store initialized successfully.")
     
@@ -447,25 +396,11 @@ async def startup_event():
     rag_cache = RagCacheService(redis_url)
     print("Redis RAG Cache initialized successfully.")
     
-    # Start ComPeer Scheduler and Mailbox Worker
+    # Start background workers
     import sys
     sys.path.append(str(PROJECT_ROOT / "backend" / "services"))
-    from services.compeer.runtime import proactive_scheduler_loop, daily_scheduler_loop
-    from mailbox_store import delayed_mail_worker
     from job_store import agent_job_worker
-    
-    app.state.proactive_task = _track_background_task(
-        "proactive_scheduler_loop",
-        asyncio.create_task(proactive_scheduler_loop()),
-    )
-    app.state.daily_task = _track_background_task(
-        "daily_scheduler_loop",
-        asyncio.create_task(daily_scheduler_loop()),
-    )
-    app.state.delayed_mail_worker = _track_background_task(
-        "delayed_mail_worker",
-        asyncio.create_task(delayed_mail_worker()),
-    )
+
     app.state.agent_job_worker = _track_background_task(
         "agent_job_worker",
         asyncio.create_task(agent_job_worker()),
@@ -484,12 +419,6 @@ async def shutdown_event():
     log_memory_snapshot("shutdown")
     await close_chat_clients(app)
     await stop_gum_instance()
-    if hasattr(app.state, 'proactive_task'):
-        app.state.proactive_task.cancel()
-    if hasattr(app.state, 'daily_task'):
-        app.state.daily_task.cancel()
-    if hasattr(app.state, 'delayed_mail_worker'):
-        app.state.delayed_mail_worker.cancel()
     if hasattr(app.state, 'reflection_task'):
         app.state.reflection_task.cancel()
     if hasattr(app.state, 'agent_job_worker'):

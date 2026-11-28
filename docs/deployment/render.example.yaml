@@ -39,10 +39,6 @@ services:
         value: "2"
       - key: MODEL_ZPD_QUERY
         value: google/gemini-3.1-flash-lite
-      - key: COMPEER_COOLDOWN_OVERRIDE_SECONDS
-        value: "10"
-      - key: ENABLE_COMPEER_DEV_CONTROLS
-        value: "true"
 
   # 前端 Next.js 服務
   - type: web

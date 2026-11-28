@@ -23,7 +23,6 @@ backend/
   prompts/                Shared prompt assets
   services/
     _compat/              Legacy flat import aliases only
-    notifications/        WebSocket connection management
     retrieval/            Retrieval cache
     conversation/         Context, PARTS, language and model streaming
     orchestration/        Composition root and conversation execution stages
@@ -38,7 +37,7 @@ backend/
     query_policy/         Classification and deterministic guardrails
     paper_visual/         Semantic paper visual planning
     visual_answer/        Answer image retrieval, preflight and layout
-    ...                   Existing attachment, ComPeer and visual domains
+    ...                   Existing attachment and visual domains
 ```
 
 Memory code lives only under `services/memory/`; import and patch it by its
@@ -73,7 +72,6 @@ remain outside the domain reorganization:
 
 | Test file | Failing test |
 | --- | --- |
-| `tests/backend/test_edf_integration.py` | `test_compeer_daily_schedule_e2e` |
 | `tests/backend/test_generate_title.py` | `test_generate_title_uses_english_for_english_first_query` |
 | `tests/backend/test_suggestion_service.py` | `test_suggestion_service_uses_latest_query_language_for_english_suggestions` |
 | `tests/backend/test_suggestion_service.py` | `test_suggestion_service_accepts_concise_english_questions_over_old_limit` |

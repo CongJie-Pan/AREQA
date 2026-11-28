@@ -60,15 +60,6 @@ def test_settings_loads_defaults():
     assert s.openrouter_web_search_engine == "exa"
     assert s.openrouter_web_search_max_tool_calls == 2
     assert s.openrouter_web_search_api_url == "https://openrouter.ai/api/v1/chat/completions"
-    assert s.compeer_delivery_delay_seconds == 120
-    assert s.compeer_cooldown_override_seconds == 120
-    assert s.compeer_proactive_mail_min_interval_seconds == 21600
-    assert s.compeer_daily_proactive_limit == 2
-    assert s.enable_mailbox_feature is False
-    assert s.enable_compeer_feature is False
-    assert s.enable_compeer_telemetry is False
-    assert s.enable_compeer_auto_proactive is False
-    assert s.enable_mailbox_sending is False
     assert s.enable_share_link_debug_logs is True
 
 def test_settings_can_be_overridden_by_env():
@@ -114,13 +105,6 @@ def test_settings_can_be_overridden_by_env():
         'OPENROUTER_WEB_SEARCH_ENGINE': 'native',
         'OPENROUTER_WEB_SEARCH_MAX_TOOL_CALLS': '1',
         'OPENROUTER_WEB_SEARCH_API_URL': 'https://openrouter.example.test/chat/completions',
-        'COMPEER_COOLDOWN_OVERRIDE_SECONDS': '30',
-        'COMPEER_PROACTIVE_MAIL_MIN_INTERVAL_SECONDS': '3600',
-        'ENABLE_MAILBOX_FEATURE': 'true',
-        'ENABLE_COMPEER_FEATURE': 'true',
-        'ENABLE_COMPEER_TELEMETRY': 'true',
-        'ENABLE_COMPEER_AUTO_PROACTIVE': 'true',
-        'ENABLE_MAILBOX_SENDING': 'true',
         'ENABLE_SHARE_LINK_DEBUG_LOGS': 'false',
     }, clear=True):
         from backend.config import Settings
@@ -165,11 +149,4 @@ def test_settings_can_be_overridden_by_env():
         assert s.openrouter_web_search_engine == 'native'
         assert s.openrouter_web_search_max_tool_calls == 1
         assert s.openrouter_web_search_api_url == 'https://openrouter.example.test/chat/completions'
-        assert s.compeer_cooldown_override_seconds == 30
-        assert s.compeer_proactive_mail_min_interval_seconds == 3600
-        assert s.enable_mailbox_feature is True
-        assert s.enable_compeer_feature is True
-        assert s.enable_compeer_telemetry is True
-        assert s.enable_compeer_auto_proactive is True
-        assert s.enable_mailbox_sending is True
         assert s.enable_share_link_debug_logs is False

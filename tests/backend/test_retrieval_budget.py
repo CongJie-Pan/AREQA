@@ -258,7 +258,6 @@ async def test_regression_execute_carries_request_scoped_retrieval_to_real_strea
     monkeypatch.setattr(config.settings, 'enable_visual_preflight', False)
     monkeypatch.setattr(config.settings, 'conversation_context_tokens', 32768)
     monkeypatch.setattr(config.settings, 'enable_conversation_compaction', True)
-    monkeypatch.setattr(execution, 'record_interaction_timestamp', AsyncMock(return_value=True))
     monkeypatch.setattr('services.memory.store.service.get_global_store', lambda: None)
     prefix = sources()
 

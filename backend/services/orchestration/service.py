@@ -28,7 +28,7 @@ from services.memory.gum.runtime import (
 from core import ConversationRuntime
 from agents import TutorAgent
 from policies import MemoryPolicy
-from tools import DelayedMailTool, MemoryQueryTool, ToolDefinition, ToolRegistry, WebSearchTool
+from tools import MemoryQueryTool, ToolDefinition, ToolRegistry, WebSearchTool
 from services.conversation.context import ConversationContextService
 from services.conversation.stream import ConversationStreamService
 from services.orchestration import (
@@ -112,14 +112,6 @@ class OrchestrationService(
             name="web_search",
             external=True,
             handler=self.web_search_tool.execute,
-        ))
-        self.delayed_mail_tool = DelayedMailTool(
-            lambda: __import__("mailbox_store").get_mailbox_store()
-        )
-        self.tool_registry.register(ToolDefinition(
-            name="schedule_letter",
-            external=False,
-            handler=self.delayed_mail_tool.execute,
         ))
         from services.conversation.image_generation import image_tool_definition
         self.tool_registry.register(image_tool_definition())

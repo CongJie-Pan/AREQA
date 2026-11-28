@@ -11,8 +11,6 @@ ROOT = Path(__file__).resolve().parents[2]
 ALIASES = {
     "answer_style_service": "conversation.answer_style",
     "cache_service": "retrieval.cache",
-    "compeer_scheduler": "compeer.runtime",
-    "connection_manager": "notifications.connections",
     "generated_image_quota": "visual.generation_quota",
     "generated_image_service": "visual.generation",
     "message_intent_service": "orchestration.message_intent",
@@ -60,7 +58,6 @@ sys.path.insert(0, str(root))
 sys.path.insert(0, str(root / "backend"))
 import services
 assert "openai" not in sys.modules
-assert "services.compeer.runtime" not in sys.modules
 # Bootstrap can add the other source root after importing backend services.
 assert importlib.util.find_spec("services.router_service") is not None
 assert importlib.util.find_spec("services.suggestion_service") is not None

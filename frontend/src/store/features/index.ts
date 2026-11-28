@@ -19,7 +19,7 @@ interface FeatureState extends RuntimeFeatureFlags {
  * Runtime feature store sourced from the backend settings endpoint.
  *
  * The store fails closed until `/api/v1/features` returns a valid payload. This
- * keeps archived UI surfaces hidden during startup, network failures, and
+ * keeps optional UI behavior off during startup, network failures, and
  * incompatible backend deployments.
  */
 export const useFeatureStore = create<FeatureState>((set, get) => ({
@@ -51,9 +51,6 @@ export const useFeatureStore = create<FeatureState>((set, get) => ({
         error: null,
       });
       logger.info('features.runtime_loaded', {
-        mailbox: flags.mailbox,
-        compeer: flags.compeer,
-        compeerTelemetry: flags.compeerTelemetry,
         conversationHistoryDebugLogs: flags.conversationHistoryDebugLogs,
       });
     } catch (error) {

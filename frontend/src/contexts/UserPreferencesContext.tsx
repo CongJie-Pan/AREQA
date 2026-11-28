@@ -247,7 +247,6 @@ export type TranslationKey =
   | 'longConversationDescription'
   | 'longConversationBranchDescription'
   | 'longConversationContinue'
-  | 'mailbox'
   | 'noConversations'
   | 'today'
   | 'yesterday'
@@ -766,7 +765,6 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     longConversationDescription: 'AI 已回覆 {count} 則。你可以開啟新對話，原對話仍會保留。',
     longConversationBranchDescription: 'AI 已回覆 {count} 則。你可以從先前某則回覆的「⋯」選單建立分支，沿用到那則回覆為止的內容，或開啟新對話。原對話仍會保留。',
     longConversationContinue: '繼續目前對話',
-    mailbox: '信箱',
     noConversations: '尚無對話紀錄',
     today: '今天',
     yesterday: '昨天',
@@ -1259,7 +1257,6 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     longConversationDescription: 'AI 已回复 {count} 条。你可以开启新对话，原对话仍会保留。',
     longConversationBranchDescription: 'AI 已回复 {count} 条。你可以从之前某条回复的「⋯」菜单创建分支，沿用到那条回复为止的内容，或开启新对话。原对话仍会保留。',
     longConversationContinue: '继续当前对话',
-    mailbox: '信箱',
     noConversations: '尚无对话纪录',
     today: '今天',
     yesterday: '昨天',
@@ -1752,7 +1749,6 @@ const TRANSLATIONS: Record<InterfaceLanguage, Record<TranslationKey, string>> = 
     longConversationDescription: 'This conversation has {count} AI replies. You can start a new chat. This chat will remain saved.',
     longConversationBranchDescription: 'This conversation has {count} AI replies. Use the ⋯ menu on an earlier reply to branch from that point, or start a new chat. This chat will remain saved.',
     longConversationContinue: 'Continue this chat',
-    mailbox: 'Mailbox',
     noConversations: 'No conversations yet',
     today: 'Today',
     yesterday: 'Yesterday',

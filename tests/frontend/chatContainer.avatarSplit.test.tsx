@@ -89,14 +89,6 @@ vi.mock('@/components/GumPanel', () => ({
   GumPanel: () => null,
 }));
 
-vi.mock('@/components/MailboxPanel', () => ({
-  MailboxPanel: () => null,
-}));
-
-vi.mock('@/components/ProactiveManager', () => ({
-  ProactiveManager: () => null,
-}));
-
 vi.mock('@/components/Auth', () => ({
   AuthPrompt: () => null,
 }));
@@ -132,8 +124,8 @@ vi.mock('@/store/liveTutor', () => ({
 }));
 
 vi.mock('@/store/features', () => ({
-  useFeatureStore: (selector: (state: { mailbox: boolean; compeer: boolean; fetchFeatures: () => void }) => unknown) =>
-    selector({ mailbox: false, compeer: false, fetchFeatures: vi.fn() }),
+  useFeatureStore: (selector: (state: { fetchFeatures: () => void }) => unknown) =>
+    selector({ fetchFeatures: vi.fn() }),
 }));
 
 vi.mock('@/store/auth', () => ({

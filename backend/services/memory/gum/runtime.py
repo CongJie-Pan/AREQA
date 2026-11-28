@@ -290,60 +290,6 @@ from services.memory.gum.context import (
 )
 
 
-async def detect_proactive_event_via_llm(user_id: str, hot_memory_snapshot: str) -> dict:
-    """Delegate to context with the single GUM runtime owner."""
-    from services.memory.gum.context import detect_proactive_event_via_llm as impl
-
-    return await impl(sys.modules[__name__], user_id, hot_memory_snapshot)
-
-
-async def generate_scaffolding_message_via_llm(
-    user_id: str,
-    hot_memory_snapshot: str,
-    cold_memory_context: str,
-    learner_state: str,
-    edf_policy: str,
-    event_summary: str = "",
-    last_compeer_message: str = "",
-    active_avatar: str = None
-) -> str:
-    """Delegate to context with the single GUM runtime owner."""
-    from services.memory.gum.context import generate_scaffolding_message_via_llm as impl
-
-    return await impl(sys.modules[__name__], user_id, hot_memory_snapshot, cold_memory_context, learner_state, edf_policy, event_summary, last_compeer_message, active_avatar)
-
-
-async def generate_epistolary_letter_via_llm(
-    user_id: str,
-    active_avatar: str,
-    hot_memory_snapshot: str,
-    cold_memory_context: str
-) -> str:
-    """Delegate to letters with the single GUM runtime owner."""
-    from services.memory.gum.letters import generate_epistolary_letter_via_llm as impl
-
-    return await impl(sys.modules[__name__], user_id, active_avatar, hot_memory_snapshot, cold_memory_context)
-
-
-async def generate_areqa_care_letter_via_llm(
-    user_id: str,
-    hot_memory_snapshot: str,
-    cold_memory_context: str,
-    learner_state: str,
-    edf_policy: str,
-    event_summary: str = "",
-    last_compeer_message: str = "",
-    allow_topic_specific: bool = False,
-) -> tuple[str, str]:
-    """Delegate to letters with the single GUM runtime owner."""
-    from services.memory.gum.letters import generate_areqa_care_letter_via_llm as impl
-
-    return await impl(sys.modules[__name__], user_id, hot_memory_snapshot, cold_memory_context, learner_state, edf_policy, event_summary, last_compeer_message, allow_topic_specific)
-
-
-from services.memory.gum.letters import delayed_reply_writer as delayed_reply_writer
-
-
 async def run_reflection_loop():
     """Delegate to observation_queries with the single GUM runtime owner."""
     from services.memory.gum.observation_queries import run_reflection_loop as impl

@@ -151,12 +151,12 @@ def test_shipped_coach_skill_is_valid_and_keeps_core_rules():
 
 
 def test_tools_for_image_slots_removes_image_tool_only_without_slots():
-    letter_tool = {"type": "function", "function": {"name": "send_epistolary_letter"}}
-    tools = [IMAGE_TOOL, letter_tool]
+    other_tool = {"type": "function", "function": {"name": "lookup_notes"}}
+    tools = [IMAGE_TOOL, other_tool]
 
     assert tools_for_image_slots(tools, 2) is tools
-    assert tools_for_image_slots(tools, 0) == [letter_tool]
-    assert tools == [IMAGE_TOOL, letter_tool]
+    assert tools_for_image_slots(tools, 0) == [other_tool]
+    assert tools == [IMAGE_TOOL, other_tool]
 
 
 # --- Unit: answer preparation limits --------------------------------------------------------

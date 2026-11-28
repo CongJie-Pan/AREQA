@@ -18,8 +18,6 @@ importing `services`.
 | `attachment_image_storage_service` | `attachments.storage` |
 | `attachment_service` | `attachments.parsing` |
 | `cache_service` | `retrieval.cache` |
-| `compeer_scheduler` | `compeer.runtime` |
-| `connection_manager` | `notifications.connections` |
 | `conversation_context_service` | `conversation.context` |
 | `conversation_stream_service` | `conversation.stream` |
 | `explicit_memory_cache` | `memory.recall_cache` |

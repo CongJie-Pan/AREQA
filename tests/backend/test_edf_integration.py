@@ -9,7 +9,6 @@ from backend.main import app
 from auth import get_current_user
 from services.memory.store.service import init_global_store, get_global_store
 import services.memory.store.service as mem_store_module
-import services.compeer_scheduler as compeer
 from services.memory.gum.runtime import async_evaluate_and_update_state
 from services.memory.scoring import evaluate_student_state
 
@@ -39,12 +38,10 @@ def tmp_store():
             if key in self.data: del self.data[key]
         def pipeline(self, transaction=True): return FakePipeline(self)
         
-    with patch("services.memory.store.service.get_redis") as mock_mem_redis, \
-         patch("services.compeer_scheduler.get_redis") as mock_comp_redis:
+    with patch("services.memory.store.service.get_redis") as mock_mem_redis:
         fake_r = FakeRedis()
         fake_r.data["areqa:hot_memory:default_user"] = '{"current_learner_state": "RUN_REPEAT"}'
         mock_mem_redis.return_value = fake_r
-        mock_comp_redis.return_value = fake_r
         init_global_store(budget_limit=1000000)
         store = get_global_store()
         app.dependency_overrides[get_current_user] = lambda: "default_user"
@@ -117,69 +114,6 @@ async def test_scaffolding_fading_flow(mock_push, mock_get_gum, tmp_store):
     data = await fake_r.get("areqa:hot_memory:default_user")
     hot = json.loads(data) if data else {}
     assert hot["current_learner_state"] == "TINKERING"
-
-@pytest.mark.asyncio
-@patch("services.compeer_scheduler.Path")
-async def test_compeer_daily_schedule_e2e(mock_path, tmp_path, tmp_store):
-    # Setup Paths
-    mock_path_instance = MagicMock()
-    mock_path.return_value = mock_path_instance
-    mock_path_instance.resolve.return_value.parents = [None, None, tmp_path]
-    mock_path_instance.__truediv__.side_effect = lambda x: tmp_path / x
-    
-    log_path = tmp_path / "data" / "gum_data" / "reflection_log_default_user.jsonl"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_path.write_text('{"role": "user", "content": "hi"}\n')
-    
-    # Mock LLM calls inside compeer via gum_instance
-    with patch("services.memory.gum.runtime.get_gum_instance") as mock_get_gum:
-        mock_gum = MagicMock()
-        mock_observer = MagicMock()
-        mock_observer.push_text = AsyncMock()
-        mock_gum.update_observation_status = AsyncMock()
-        mock_get_gum.return_value = (mock_gum, mock_observer)
-        mock_resp_insights = MagicMock()
-        mock_resp_insights.choices = [MagicMock()]
-        mock_resp_insights.choices[0].message.content = '{"insights": ["dummy insight"]}'
-            
-        mock_resp_events = MagicMock()
-        mock_resp_events.choices = [MagicMock()]
-        now = datetime.datetime.now()
-        timing = now.strftime("%H:%M")
-        mock_resp_events.choices[0].message.content = '{"events": [{"Timing": "' + timing + '", "Content": "Test", "importance": 1.0}]}'
-            
-        mock_gum.client.chat.completions.create = AsyncMock(side_effect=[mock_resp_insights, mock_resp_events])
-        mock_gum.model = "test-model"
-        
-        mock_gum.update_propositions = AsyncMock()
-        mock_gum.run_reflection_cycle = AsyncMock(return_value="mock_insights")
-        obs_mock = MagicMock()
-        obs_mock.content = "mocked observation content"
-        mock_gum.recent_observations = AsyncMock(return_value=[obs_mock])
-        
-        # 2. 每日初始化
-        await compeer.run_reflection_and_initialization("default_user")
-        
-    schedule_path = tmp_path / "data" / "gum_data" / "schedule_default_user.json"
-    print(f"DEBUG: Does schedule_path exist? {schedule_path.exists()}")
-    if not schedule_path.exists():
-        print(f"DEBUG: Tmp dir contents: {list(tmp_path.glob('**/*'))}")
-    assert schedule_path.exists()
-    
-    # 3. 輪詢觸發：schedule events now create asynchronous AREQA care letters
-    # instead of popup alerts.
-    with patch("services.compeer_scheduler.schedule_areqa_care_letter", new_callable=AsyncMock) as mock_schedule_care:
-        await compeer.tick_proactive_schedule("default_user")
-        mock_schedule_care.assert_awaited_once()
-
-    # 4. Frontend Polling
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        res = await ac.get("/api/v1/proactive-check?user_id=default_user")
-        assert res.json() == {"has_alert": False}
-        
-        # Second call should be empty
-        res2 = await ac.get("/api/v1/proactive-check?user_id=default_user")
-        assert res2.json() == {"has_alert": False}
 
 @pytest.mark.asyncio
 @patch.dict(os.environ, clear=True)

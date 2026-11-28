@@ -297,46 +297,6 @@ class MemoryStore(MemoryStoreBehaviorMixin, MemoryStoreCandidateMixin):
                 source,
             )
 
-    async def set_pending_alert(self, user_id: str, content: str):
-        logger.info("memory.pending_alert_set user_id=%s", user_id)
-        alert_key = f"pending_alert_{user_id}"
-        await self.update_hot_memory(user_id, alert_key, content)
-        
-    async def get_and_clear_pending_alert(self, user_id: str) -> str:
-        from redis.exceptions import WatchError
-        alert_key = f"pending_alert_{user_id}"
-        mem_key = f"areqa:hot_memory:{user_id}"
-        
-        async with self.redis.pipeline(transaction=True) as pipe:
-            while True:
-                try:
-                    await pipe.watch(mem_key)
-                    data = await pipe.get(mem_key)
-                    hot_memory = json.loads(data) if data else {}
-                    
-                    content = hot_memory.get(alert_key, "")
-                    if not content:
-                        pipe.unwatch()
-                        return ""
-                        
-                    del hot_memory[alert_key]
-                    serialized = json.dumps(hot_memory, ensure_ascii=False)
-                    
-                    pipe.multi()
-                    pipe.set(mem_key, serialized)
-                    await pipe.execute()
-                    
-                    logger.info("memory.pending_alert_cleared user_id=%s", user_id)
-                    return content
-                except WatchError:
-                    continue
-
-    async def clear_all_pending_alerts(self, user_id: str = "default_user"):
-        # We don't have a way to know all users easily without scanning. 
-        # But we can just clear for the specific user. 
-        # Actually, Phase 1 requires multi-tenant, so we should probably scan or not do this.
-        # Let's skip for now, or scan for pattern `areqa:hot_memory:*`
-        pass
             
     async def clear_all_memory(self, user_id: str):
         """Completely wipe hot memory and reset user profile to defaults."""

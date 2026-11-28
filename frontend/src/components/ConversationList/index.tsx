@@ -8,12 +8,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { App, Dropdown, Input, Modal, Spin, Tooltip } from 'antd';
-import { MessageCircle, MoreHorizontal, Pencil, PinOff, Plus, Search, ChevronRight, Trash2, PanelLeftClose, Mail as MailIcon } from 'lucide-react';
+import { MessageCircle, MoreHorizontal, Pencil, PinOff, Plus, Search, ChevronRight, Trash2, PanelLeftClose } from 'lucide-react';
 import { BranchIcon, conversationBranchesEnabled } from '@/components/ConversationBranch/BranchIcon';
 import { useConversationStore } from '@/store/conversation';
 import { useChatStore } from '@/store/chat';
-import { useMailboxStore } from '@/store/mailbox';
-import { useFeatureStore } from '@/store/features';
 import { SidePanelType } from '@/types/panel';
 import {
   logConversationHistoryDebugEvent,
@@ -118,16 +116,6 @@ export function ConversationList({
   const sidebarLogoSrc = resolvedTheme === 'light'
     ? '/logo/AREQA_logo_v4_black_word.png'
     : '/logo/AREQA_logo_v4_text.png';
-
-  const { unreadCount, fetchMails } = useMailboxStore();
-  const mailboxEnabled = useFeatureStore((state) => state.mailbox);
-
-  useEffect(() => {
-    if (!mailboxEnabled) {
-      return;
-    }
-    fetchMails();
-  }, [fetchMails, mailboxEnabled]);
 
   const pinnedIds = usePinnedConversationStore((state) => state.ids);
   useEffect(() => {
@@ -505,25 +493,6 @@ export function ConversationList({
                 </button>
               </Tooltip>
             </div>
-          )}
-          {mailboxEnabled && (
-            <button className="areqa-conversation-panel-button" onClick={() => onSelectGumPanel?.('mailbox')}>
-              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                <MailIcon size={18} />
-                {unreadCount > 0 && (
-                  <span style={{
-                    position: 'absolute', top: -4, right: -4,
-                    backgroundColor: 'red', color: 'white',
-                    borderRadius: '50%', width: 14, height: 14,
-                    fontSize: 10, display: 'flex',
-                    justifyContent: 'center', alignItems: 'center'
-                  }}>
-                    {unreadCount > 9 ? '9+' : unreadCount}
-                  </span>
-                )}
-              </div>
-              <span>{t('mailbox')}</span>
-            </button>
           )}
         </div>
         {isLoading && conversations.length === 0 ? (

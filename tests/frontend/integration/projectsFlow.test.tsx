@@ -58,7 +58,6 @@ vi.mock('next/image', () => ({
   default: (props: React.ImgHTMLAttributes<HTMLImageElement>) => <img {...props} alt={props.alt ?? ''} />,
 }));
 vi.mock('@/components/Auth', () => ({ UserAuthUI: () => <div /> }));
-vi.mock('@/store/mailbox', () => ({ useMailboxStore: () => ({ unreadCount: 0, fetchMails: vi.fn() }) }));
 vi.mock('@/services/speech/transcription', () => ({ transcribeSpeech: vi.fn() }));
 
 function sseResponse(answer: string): Response {
