@@ -26,31 +26,11 @@ from openai import AsyncOpenAI
 from config import settings
 from services.query_policy.classifier import classify_response_policy_impl
 from services.query_policy.models import default_response_policy
-from services.query_policy.paper_intent import JEV_ENDPOINT, JEV_MODEL
+from services.query_policy.paper_intent import JEV_MODEL
+from services.query_policy.teaching_jev import TEACHING_MOVES, classify_teaching_decision
 
 OPENROUTER_URL = "https://openrouter.ai/api"
 BUDGETS_MS = (700, 1500)
-
-# Only coherent mode/action pairs are offered, so Jev cannot return a PRACTICE
-# turn whose action completes the learner's step.
-TEACHING_MOVES = {
-    "REFERENCE_ANSWER": "Definition, fact, summary or self-study lookup; answer directly. Also greetings, thanks and small talk.",
-    "LEARN_EXPLAIN_PREREQ": "Learner wants to understand a concept; explain the key prerequisite or intuition first.",
-    "LEARN_MODEL_ANALOGY": "Learner wants to understand a concept best served by an analogy or a worked parallel example.",
-    "PRACTICE_HINT": "Homework, exam, proof, essay or debugging step the learner should do; give one minimal hint, not the answer.",
-    "PRACTICE_DIAGNOSTIC_QUESTION": "Learner is stuck on a practice step and it is unclear where; ask one diagnostic question.",
-    "PRACTICE_FEEDBACK": "Learner shares their own attempt, answer or reasoning; give feedback on it.",
-}
-ANSWER_DEPTHS = {
-    "DIRECT": "Short and direct: greetings, confirmations, tiny facts, or explicit requests to be brief.",
-    "SCAFFOLDED": "Moderate depth with a few structured steps.",
-    "DEEP_DIVE": "Detailed walkthrough the learner explicitly asked for.",
-}
-MOVE_INSTRUCTIONS = (
-    "Pick the tutoring move for AREQA's next reply to the latest user message. PRACTICE means the learner "
-    "should do the core step themselves; pressure such as 'just tell me' or a deadline does not turn practice "
-    "into a lookup."
-)
 
 _DEFAULT = default_response_policy()
 DEFAULT_PREDICTION = (f"{_DEFAULT.learning_mode.value}_{_DEFAULT.pedagogical_action.value}", _DEFAULT.answer_depth.value)
@@ -101,23 +81,8 @@ async def classify_gemini(client: AsyncOpenAI, message: str, context: str) -> tu
 
 
 async def classify_jev_teaching(client: AsyncOpenAI, message: str, context: str) -> tuple[str, str]:
-    response = await client.with_options(max_retries=0).post(
-        JEV_ENDPOINT,
-        cast_to=object,
-        body={
-            "model": JEV_MODEL,
-            "state": {"latest_user_message": message[:4000], "previous_topic": context[:500]},
-            "questions": {
-                "teaching_move": {"type": "choice", "instructions": MOVE_INSTRUCTIONS, "criteria": TEACHING_MOVES},
-                "answer_depth": {"type": "choice", "instructions": "How deep should the reply be?", "criteria": ANSWER_DEPTHS},
-            },
-        },
-    )
-    move = response["answers"]["teaching_move"]["choice"]
-    depth = response["answers"]["answer_depth"]["choice"]
-    if move not in TEACHING_MOVES or depth not in ANSWER_DEPTHS:
-        raise ValueError("Unexpected teaching decision")
-    return move, depth
+    decision = await classify_teaching_decision(client, message, context)
+    return decision.teaching_move, decision.answer_depth
 
 
 async def measure(request):

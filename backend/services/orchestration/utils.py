@@ -12,6 +12,7 @@ from services.query_policy.classifier import (
     classify_response_policy_impl,
     parse_and_decompose_query_impl,
 )
+from services.query_policy.policy_backend import classify_with_backend
 
 logger = logging.getLogger(__name__)
 InterfaceLanguage = str
@@ -105,13 +106,19 @@ async def classify_dialogue_policy(
     has_pdf_attachment: bool = False,
     pdf_attachment_count: int = 0,
 ):
-    """Return the structured EDF response policy for orchestration."""
+    """Return the structured EDF response policy from the configured backend."""
 
-    return await classify_response_policy_impl(
+    return await classify_with_backend(
+        lambda: classify_response_policy_impl(
+            client,
+            model,
+            user_msg,
+            chat_history,
+            has_pdf_attachment=has_pdf_attachment,
+            pdf_attachment_count=pdf_attachment_count,
+        ),
         client,
-        model,
         user_msg,
         chat_history,
         has_pdf_attachment=has_pdf_attachment,
-        pdf_attachment_count=pdf_attachment_count,
     )

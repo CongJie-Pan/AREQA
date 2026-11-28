@@ -9,7 +9,6 @@ from scripts.benchmark_teaching_policy import (
     classify_jev_teaching,
     summarize,
 )
-from services.query_policy.paper_intent import JEV_ENDPOINT, JEV_MODEL
 
 
 def _row(move, depth="DIRECT", status="ok", ms=400, expected=("PRACTICE_HINT",), depths=("DIRECT",)):
@@ -64,28 +63,14 @@ def test_mixed_expectations_are_not_practice_cases_and_incoherent_pairs_are_coun
 
 
 @pytest.mark.asyncio
-async def test_jev_teaching_request_sends_only_bounded_message_and_topic():
+async def test_benchmark_measures_the_production_jev_call():
     client = MagicMock()
-    post = AsyncMock(return_value={"answers": {
-        "teaching_move": {"choice": "PRACTICE_HINT"}, "answer_depth": {"choice": "DIRECT"},
-    }})
-    client.with_options.return_value.post = post
+    answers = {
+        "teaching_move": "PRACTICE_HINT", "task_intent": "ANSWER_EXAM", "answer_depth": "DIRECT",
+        "visual_support": "NONE", "evidence_mode": "NONE", "learning_technique": "NONE",
+    }
+    client.with_options.return_value.post = AsyncMock(
+        return_value={"answers": {name: {"choice": label} for name, label in answers.items()}},
+    )
 
     assert await classify_jev_teaching(client, "那下一步呢？", "剛給了提示") == ("PRACTICE_HINT", "DIRECT")
-    client.with_options.assert_called_once_with(max_retries=0)
-    assert post.await_args.args == (JEV_ENDPOINT,)
-    body = post.await_args.kwargs["body"]
-    assert body["model"] == JEV_MODEL
-    assert body["state"] == {"latest_user_message": "那下一步呢？", "previous_topic": "剛給了提示"}
-    assert set(body["questions"]["teaching_move"]["criteria"]) == set(TEACHING_MOVES)
-
-
-@pytest.mark.asyncio
-async def test_jev_teaching_rejects_unknown_labels():
-    client = MagicMock()
-    client.with_options.return_value.post = AsyncMock(return_value={"answers": {
-        "teaching_move": {"choice": "PRACTICE_ANSWER"}, "answer_depth": {"choice": "DIRECT"},
-    }})
-
-    with pytest.raises(ValueError):
-        await classify_jev_teaching(client, "hi", "")
