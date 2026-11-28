@@ -3,7 +3,7 @@
 - 日期：2026-11-28
 - 對照版本：opencode `eeeeaa0d`（2026-11-27），AREQA `6b13f9d`（master）
 - 上游文件：`docs/tech_docs/opencode_project_and_areqa_improvements.md`（初步規劃）
-- 狀態：實作中（見下方進度表）。P5、P6 和 P4 的轉場提示要等 §7 的 Q2、Q3 有結論才能開始
+- 狀態：P0–P6 都已實作（見下方進度表）。新功能都在 flag 後面，預設關閉，下一步是 staging 驗證和 eval
 
 ### 實作進度（2026-11-28）
 
@@ -14,9 +14,14 @@
 | P1-a 摘要保留清單 | 完成 | `84ca68c` | 字數上限維持 450 字，還沒用 live eval 驗證 |
 | P1-b 背景預算 | 完成（flag 預設關閉） | `84ca68c` | 設計改成在 `prepare_history` 內排程，並加上 hysteresis。見 Q1 |
 | P2 stable prefix | 完成（flag 和 rollout 都是 0） | `6069aa2` | 上線前要先用 eval 檢查遵守指示的程度（Q4） |
-| P4 AgentProfile | 部分完成 | `3ec49d0` | **`services/teaching/profiles.py` 的 `ProfileCapabilities` 已經是 AgentProfile**（這份 spec 寫完前就有了）。所以不另外新增模組，改成加 `topic_card` capability，拿掉 orchestration 裡剩下的 `is_research_coach` 分支。轉場提示要等 Q2 |
-| P5 Outcome 重構 | 未開始 | — | `StepResult` 的設計要看 Q3 的結論 |
-| P6 工具迴圈 | 未開始 | — | 依賴 P5 和 Q3 |
+| P4 AgentProfile | 完成 | `3ec49d0`、`f2e40cd` | **`services/teaching/profiles.py` 的 `ProfileCapabilities` 已經是 AgentProfile**（這份 spec 寫完前就有了）。所以不另外新增模組，改成加 `topic_card` capability。轉場提示依 Q2 存在 Redis（`profile_history.py`，TTL 7 天，讀取上限 300 ms，失敗時只是少了提示） |
+| P5 Outcome 重構 | 完成 | `ace7e2f`、`4bfd9c0` | 先錄 golden SSE（6 條路徑），重構後輸出完全相同。`_run_provider_step` + `StepOutcome` + `_AnswerPipeline`；`SSEAdapter.emit` 會自動編號 |
+| P6 工具迴圈 | 完成（flag 和 rollout 都是 0） | `2e5600b` | 依 Q3，第 1 步的文字直接串流。搜尋設定和結果格式抽到 `web_search_call.py`，兩條搜尋路徑共用。`memory_query` 還沒開放（照 spec） |
+
+**P6 已知限制**：
+- 走模型搜尋的回合，post-turn 拿到的 `use_web_search` 是 False，所以依賴這個值的後續處理不會觸發。
+- 第 1 步如果同時呼叫了生圖和搜尋，生圖會被丟掉。
+- 跟分類器的比較目前只有 log：`orchestration.model_search_decision called=` 對照 shadow routing 的紀錄，還沒有報表。
 
 ---
 
