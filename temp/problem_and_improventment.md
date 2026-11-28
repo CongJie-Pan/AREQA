@@ -1,0 +1,2 @@
+每一輪都出現 dialogue_policy_timeout：policy classifier 一直超時，系統都改用預設策略，所以教學策略分類實際上沒有在發揮作用。
+我在想obsidian可否建立知識庫mcp，融入至areqa。
