@@ -24,6 +24,37 @@ TRADITIONAL_CHINESE_HINTS = set(
 )
 
 
+# Interface text the client wraps around quoted passages (frontend
+# src/contexts/UserPreferencesContext.tsx: textSelectionExplainPrompt and
+# quotedTextDefaultPrompt). It follows the UI language, not the learner's.
+CLIENT_QUOTE_PROMPTS = frozenset({
+    "請幫我解釋這段文字：",
+    "请帮我解释这段文字：",
+    "Please explain this passage:",
+    "請回答這段引用內容。",
+    "请回答这段引用内容。",
+    "Please answer this quoted passage.",
+})
+
+
+def _language_signal(message: str) -> tuple[str, bool]:
+    """Return the text whose language decides the answer, and whether the learner wrote it.
+
+    Markdown blockquote lines are a passage the learner quoted, not their own
+    words. The learner's own text decides; when it is only a client prompt
+    (for example the Explain button), the quoted passage decides instead.
+    """
+
+    lines = message.splitlines()
+    quoted = [line.lstrip()[1:].strip() for line in lines if line.lstrip().startswith(">")]
+    if not quoted:
+        return message, True
+    own = "\n".join(line for line in lines if not line.lstrip().startswith(">")).strip()
+    if own and own not in CLIENT_QUOTE_PROMPTS:
+        return own, True
+    return "\n".join(quoted), False
+
+
 def _looks_predominantly_english(text: str) -> bool:
     """Return whether user-authored text is primarily English.
 
@@ -100,10 +131,12 @@ def resolve_answer_language(
     Side effects:
         None.
     """
-    explicit_language = _explicit_language_request(latest_user_message)
+    signal, learner_wrote = _language_signal(latest_user_message)
+    # A quoted passage that mentions a language is not a request for it.
+    explicit_language = _explicit_language_request(signal) if learner_wrote else None
     if explicit_language:
         return ANSWER_LANGUAGE_RULES[explicit_language]
-    query_language = _detect_query_language(latest_user_message)
+    query_language = _detect_query_language(signal)
     if prefer_query_language and query_language:
         return ANSWER_LANGUAGE_RULES[query_language]
     if query_language in {"zh-TW", "zh-CN"}:
@@ -162,12 +195,13 @@ def detect_reply_language(interface_language: str, latest_user_message: str) -> 
     Returns:
         One of ``"zh-TW"``, ``"zh-CN"`` or ``"en"``.
     """
-    explicit = _explicit_language_request(latest_user_message)
+    signal, learner_wrote = _language_signal(latest_user_message)
+    explicit = _explicit_language_request(signal) if learner_wrote else None
     if explicit:
         return explicit
-    detected = _detect_query_language(latest_user_message)
+    detected = _detect_query_language(signal)
     if detected in {"zh-TW", "zh-CN"}:
-        han = re.findall(r"[\u3400-\u9fff]", latest_user_message)
+        han = re.findall(r"[\u3400-\u9fff]", signal)
         script_neutral = not any(char in SIMPLIFIED_CHINESE_HINTS or char in TRADITIONAL_CHINESE_HINTS for char in han)
         if script_neutral and interface_language in {"zh-TW", "zh-CN"}:
             return interface_language
@@ -175,6 +209,6 @@ def detect_reply_language(interface_language: str, latest_user_message: str) -> 
     if detected:
         return detected
     # Too short for the English heuristic ("hi"), but plainly Latin script.
-    if re.search(r"[A-Za-z]", latest_user_message):
+    if re.search(r"[A-Za-z]", signal):
         return "en"
     return interface_language if interface_language in ANSWER_LANGUAGE_RULES else "zh-TW"
