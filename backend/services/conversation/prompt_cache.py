@@ -145,36 +145,25 @@ def _prepend_turn_instructions(message: dict[str, Any], system_text: str) -> Non
         )]
 
 
-def _with_cache_breakpoint(message: dict[str, Any]) -> dict[str, Any]:
-    """Copy ``message`` with a cache breakpoint on its last plain text part."""
-    copied = dict(message)
-    content = message.get("content")
-    if isinstance(content, str):
-        copied["content"] = [{"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}]
-    elif isinstance(content, list):
-        parts = list(content)
-        for position in range(len(parts) - 1, -1, -1):
-            part = parts[position]
-            if type(part) is dict and part.get("type") == "text":
-                parts[position] = {**part, "cache_control": {"type": "ephemeral"}}
-                break
-        copied["content"] = parts
-    return copied
-
-
 def apply_stable_prefix_layout(
     messages: list[dict[str, Any]],
 ) -> tuple[list[dict[str, Any]], CacheLayout | None]:
-    """Give document-free turns the same cacheable prefix as document turns.
+    """Give document-free turns a provider-cacheable prefix.
 
-    The stable system prompt alone is far below the provider's minimum
-    cacheable size, so the reusable prefix is the earlier conversation, which
-    is byte-identical between turns once per-turn instructions leave the system
-    message. The breakpoint goes on the message before the latest turn::
+    The reusable prefix is the earlier conversation, which is byte-identical
+    between turns once per-turn instructions leave the system message::
 
         system    stable text (identical every turn)
-        ...       earlier conversation; the last one carries cache_control
+        ...       earlier conversation, unchanged
         user      <turn_instructions>per-turn system text</...> + question
+
+    No ``cache_control`` breakpoint is added: in a chat the message before the
+    latest turn is the previous answer, so a breakpoint there names a new prefix
+    every turn and makes Gemini write a fresh explicit cache each time without
+    reading it back. Implicit caching reuses the shared prefix with no write.
+    Eval 2026-11-28 (scripts/evaluate_stable_prefix.py, gemini-3.8-flash, ~9K
+    prompt tokens): system layout cached 0 on every turn; breakpoint wrote
+    7.6-8.4K tokens per turn; implicit read ~4.1K tokens from turn 2, writing 0.
 
     Args:
         messages: Provider-ready messages after history preparation.
@@ -194,8 +183,6 @@ def apply_stable_prefix_layout(
     if latest_user is None or not system_text:
         return messages, None
     _prepend_turn_instructions(rest[latest_user], system_text)
-    if latest_user > 0:
-        rest[latest_user - 1] = _with_cache_breakpoint(rest[latest_user - 1])
     prefix = [{"role": "system", "content": STABLE_CHAT_SYSTEM_PROMPT}]
     digest = hashlib.sha256(
         json.dumps(prefix, ensure_ascii=False, sort_keys=True).encode("utf-8")

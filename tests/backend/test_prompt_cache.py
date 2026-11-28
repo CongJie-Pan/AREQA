@@ -173,11 +173,13 @@ def test_stable_prefix_keeps_history_identical_across_turns_with_changing_policy
     assert first[-1]["content"][0]["text"] == f"<{TURN_TAG}>\npolicy A + memory v1\n</{TURN_TAG}>"
     assert first[-1]["content"][1] == {"type": "text", "text": "next?"}
     assert not any(m["role"] == "system" for m in first[1:])
-    # The earlier conversation is byte-identical apart from the single breakpoint.
-    assert first[1] == second[1] == exchange[0]
-    assert sum("cache_control" in part for m in second if isinstance(m["content"], list)
-               for part in m["content"]) == 1
-    assert second[-2]["content"] == [{"type": "text", "text": "more", "cache_control": {"type": "ephemeral"}}]
+    # The earlier conversation is byte-identical, so the provider's implicit cache
+    # can reuse it; first's earlier turns are an exact prefix of second's.
+    assert second[:len(first) - 1] == first[:-1]
+    assert second[-2] == {"role": "assistant", "content": "more"}
+    # No explicit breakpoint: in a chat it would name a new prefix every turn and
+    # make the provider write a fresh cache each time (eval 2026-11-28).
+    assert "cache_control" not in json.dumps(second, ensure_ascii=False)
 
 
 def test_stable_prefix_defers_to_document_layout_and_skips_promptless_turns():
@@ -185,8 +187,7 @@ def test_stable_prefix_defers_to_document_layout_and_skips_promptless_turns():
     plain = [{"role": "user", "content": "q"}]
     assert apply_stable_prefix_layout(plain) == (plain, None)
     first_turn, _ = apply_stable_prefix_layout(chat_turn("policy", [], "q"))
-    assert len(first_turn) == 2  # no earlier message, so no breakpoint
-    assert "cache_control" not in str(first_turn)
+    assert len(first_turn) == 2
 
 
 def test_stable_prefix_layout_does_not_mutate_input():
