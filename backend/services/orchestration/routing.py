@@ -13,7 +13,8 @@ from policies import SearchDecision, SearchReason
 logger = logging.getLogger("backend.services.orchestration_service")
 
 async def plan_search(service, *, last_user_msg, run_context, trace, effective_search_mode,
-                      has_attachments, auto_routing_enabled, use_rag, attachments):
+                      has_attachments, auto_routing_enabled, use_rag, attachments,
+                      model_tool_routing=False):
     """Choose search and turn policy without emitting transport events.
 
     Returns:
@@ -25,6 +26,9 @@ async def plan_search(service, *, last_user_msg, run_context, trace, effective_s
         # In AUTO mode the uploaded document is the primary source. Generic
         # search would answer from the filename/query instead of file content.
         search_decision = SearchDecision(False, SearchReason.ATTACHMENT_CONTEXT_PRIORITY)
+    elif effective_search_mode == SearchMode.AUTO and model_tool_routing:
+        # The main model decides through its web_search tool; no routing call.
+        search_decision = SearchDecision(False, SearchReason.MODEL_TOOL_ROUTING)
     elif effective_search_mode == SearchMode.AUTO and auto_routing_enabled:
         trace.increment_model_call("search_routing")
         search_decision = await service.tutor_agent.decide_search(

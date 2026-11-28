@@ -6,7 +6,7 @@ import logging
 
 from config import settings
 from core import EventType, SearchMode
-from policies import CapabilityPolicy
+from policies import CapabilityPolicy, SearchReason
 from services.memory.gate import classify_user_message
 from services.orchestration.utils import _localized_greeting_reply
 from services.query_policy.classifier import (
@@ -82,6 +82,12 @@ class OrchestrationExecutionMixin:
         auto_routing_enabled = CapabilityPolicy.rollout_enabled(
             feature_enabled=settings.enable_agent_search_routing,
             rollout_percentage=settings.agent_search_rollout_percentage,
+            user_id=user_id,
+            conversation_id=conversation_id,
+        )
+        model_tool_routing = CapabilityPolicy.rollout_enabled(
+            feature_enabled=settings.enable_model_tool_routing,
+            rollout_percentage=settings.model_tool_routing_rollout_percentage,
             user_id=user_id,
             conversation_id=conversation_id,
         )
@@ -163,6 +169,7 @@ class OrchestrationExecutionMixin:
             self, last_user_msg=last_user_msg, run_context=run_context, trace=trace,
             effective_search_mode=effective_search_mode, has_attachments=has_attachments,
             auto_routing_enabled=auto_routing_enabled, use_rag=use_rag, attachments=attachments,
+            model_tool_routing=model_tool_routing,
         )
         use_web_search = search_decision.should_search
         turn_plan_enabled = bool(settings.enable_turn_plan_runtime)
@@ -423,6 +430,7 @@ class OrchestrationExecutionMixin:
             run_state.tool_budget, trace=trace, max_image_slots=max_image_slots,
             image_attachments=image_attachments, interface_language=interface_language,
             retrieval_context=run_state.context_prompt if context_results_obj and (use_rag or use_web_search) else "",
+            model_search=search_decision.reason is SearchReason.MODEL_TOOL_ROUTING,
         ):
             if event.startswith("event: accumulator\n"):
                 try:

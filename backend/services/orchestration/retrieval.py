@@ -27,6 +27,7 @@ from services.query_policy.classifier import (
 from services.orchestration.trace import TurnLatencyTrace
 from services.orchestration.turn_plan import TurnPlan
 from services.orchestration.intake import chat_avatar_key as _chat_avatar_key
+from services.conversation.web_search_call import format_web_results, web_search_arguments, web_search_config
 from services.orchestration.utils import (
     _build_valid_web_sources,
     _localized_greeting_reply,
@@ -150,35 +151,17 @@ class OrchestrationRetrievalMixin:
         yield f"event: status\ndata: {json.dumps({'status': 'searching_dense', 'message': '🌐 網路檢索中...'}, ensure_ascii=False)}\n\n"
 
 
-        web_search_provider = os.environ.get(
-            "WEB_SEARCH_PROVIDER",
-            settings.web_search_provider,
-        ).strip().lower() or "openrouter"
-        web_search_model = os.environ.get("MODEL_WEB_SEARCH", settings.model_web_search).strip()
-        web_search_engine = os.environ.get(
-            "OPENROUTER_WEB_SEARCH_ENGINE",
-            settings.openrouter_web_search_engine,
-        ).strip().lower() or "auto"
-        web_search_max_tool_calls = int(os.environ.get(
-            "OPENROUTER_WEB_SEARCH_MAX_TOOL_CALLS",
-            str(settings.openrouter_web_search_max_tool_calls),
-        ))
-        if web_search_provider == "openrouter":
-            api_key = os.environ.get("OPENROUTER_API_KEY", "")
-        elif web_search_provider == "tavily":
-            api_key = os.environ.get("TAVILY_API_KEY", "")
-        else:
-            api_key = os.environ.get("PERPLEXITY_API_KEY", "")
-        if not api_key:
+        search_config = web_search_config()
+        web_search_provider = search_config.provider
+        web_search_model = search_config.model
+        if not search_config.api_key:
             yield f"event: status\ndata: {json.dumps({'status': 'error', 'message': '⚠️ 未設定網路搜尋服務金鑰，改用一般對話...'}, ensure_ascii=False)}\n\n"
             run_state.context_prompt = ""
             return
 
         rewritten_query = last_user_msg
-        max_results = min(max(int(os.environ.get("WEB_SEARCH_MAX_RESULTS", "15")), 3), 20)
-        search_context_size = os.environ.get("WEB_SEARCH_CONTEXT_SIZE", "high").lower()
-        if search_context_size not in {"low", "medium", "high"}:
-            search_context_size = "high"
+        max_results = search_config.max_results
+        search_context_size = search_config.search_context_size
         rewrite_start = time.time()
         enable_query_rewrite = os.environ.get("ENABLE_WEB_QUERY_REWRITE", "true").lower() in {"1", "true", "yes", "on"}
         if enable_query_rewrite and self.client and messages:
@@ -230,23 +213,8 @@ class OrchestrationRetrievalMixin:
         try:
             tool_result = await self.tool_registry.execute(
                 "web_search",
-                {
-                    "query": rewritten_query,
-                    "user_id": user_id,
-                    "conversation_id": conversation_id,
-                    "api_key": api_key,
-                    "provider": web_search_provider,
-                    "model": web_search_model,
-                    "engine": web_search_engine,
-                    "max_tool_calls": web_search_max_tool_calls,
-                    "max_results": max_results,
-                    "search_context_size": search_context_size,
-                    "tavily_search_depth": os.environ.get(
-                        "TAVILY_WEB_SEARCH_DEPTH",
-                        settings.tavily_web_search_depth,
-                    ),
-                    "redis_url": os.environ.get("REDIS_URL", "redis://localhost:6379"),
-                },
+                web_search_arguments(search_config, query=rewritten_query, user_id=user_id,
+                                     conversation_id=conversation_id, max_results=max_results),
                 run_state.tool_budget,
             )
             if trace:
@@ -261,8 +229,7 @@ class OrchestrationRetrievalMixin:
             run_state.context_prompt = ""
             return
 
-        results = tool_result.content["results"]
-        openrouter_summary = str(tool_result.content.get("summary") or "").strip()
+        results, context_texts, sources_payload, used_summary = format_web_results(tool_result.content)
         run_state.web_search_results = list(results)
         yield f"event: tool_completed\ndata: {json.dumps({'tool_name': 'web_search', 'display_message': '已完成資料查找', 'result_count': len(results), 'latency_ms': tool_result.latency_ms, 'cache_status': tool_result.cache_status}, ensure_ascii=False)}\n\n"
 
@@ -274,9 +241,7 @@ class OrchestrationRetrievalMixin:
         )
         yield f"event: status\ndata: {json.dumps({'status': 'reranking', 'message': '⚡ 篩選與統整網路資訊...'}, ensure_ascii=False)}\n\n"
 
-        context_texts, sources_payload = _build_valid_web_sources(results)
-        if not context_texts and openrouter_summary:
-            context_texts = [f"[網路搜尋摘要]\n{openrouter_summary}"]
+        if used_summary:
             logger.info(
                 "orchestration.web_search_summary_used conversation_id=%s provider=%s",
                 conversation_id,
