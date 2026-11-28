@@ -12,6 +12,7 @@ from services.query_policy.classifier import (
 from services.orchestration.intake import chat_avatar_key as _chat_avatar_key
 from services.orchestration.trace import TurnLatencyTrace
 from services.orchestration.turn_plan import TurnPlan
+from services.teaching.engine import apply_response_mode
 
 logger = logging.getLogger(__name__)
 InterfaceLanguage = str
@@ -208,24 +209,7 @@ class OrchestrationPromptingMixin:
             beyond the already-assembled AREQA prompt.
         """
 
-        voice_instruction = (
-            "\n\n【Live Voice 回答格式】本回合正在為即時語音輸出產生內容。"
-            "正式回答必須是適合朗讀的純文字：不要使用 Markdown、標題、表格、列點、"
-            "emoji、引用編號、程式碼區塊或任何只適合視覺閱讀的格式。"
-            "請使用自然口語、短句和穩定節奏；依本回合 learning_mode 決定是否直接回答。"
-            "REFERENCE 可以直接回答；LEARN 先補必要理解支點；PRACTICE 不代做學習者應練習的核心步驟。"
-            "每次回答最多二到三句；如果內容較長，請先停下來問使用者要不要繼續。"
-            "當使用者提出範圍很廣、可從多個角度展開的知識分享、介紹、講解或歷史脈絡請求時，"
-            "不要直接展開長篇說明。先用一句自然口語的澄清問題請使用者選方向，"
-            "例如想先看起因、人物、時間線、影響、案例或某個子題。"
-            "只有當使用者已指定明確角度、範圍或深度時，才給短而聚焦的回答。"
-            "除非使用者明確要求其他語言，中文回答一律使用繁體中文。"
-        )
-        copied = [message.copy() for message in messages]
-        if copied and copied[0].get("role") == "system":
-            copied[0]["content"] = f"{copied[0].get('content', '')}{voice_instruction}"
-            return copied
-        return [{"role": "system", "content": voice_instruction.strip()}, *copied]
+        return apply_response_mode(messages, "voice")
 
     @staticmethod
     def _should_run_parts_llm_rewrite(

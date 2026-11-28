@@ -22,6 +22,7 @@ not start providers or workers.
 | `orchestration/` | `service.py` is the composition root. `execution.py` orders events and stages; `routing.py`, `response_policy.py`, `answer_preparation.py` and `completion.py` implement bounded phases alongside existing retrieval/prompting/streaming helpers. |
 | `paper_visual/` | `planner.py` owns model/PDF I/O; `fallback.py` selects deterministic visuals; `validation.py` bounds plan output. |
 | `pdf_visual/` | PDF geometry, extraction and rendering. |
+| `teaching/` | Teaching Layer. `engine.py` renders AREQA's teaching system prompt from a `TeachingRequest` (per-turn decisions) and `TeachingMaterials` (learner context the caller gathered) without I/O; `prompts.py` owns the base prompts that `app.prompts` re-exports. Section order is part of the contract. |
 | `query_policy/` | `classifier.py` owns model classification; `learning_guardrails.py` and `pdf_guardrails.py` enforce deterministic policy. |
 | `realtime/` | Session configuration, OpenAI sessions, LiveKit token/dispatch, speech, attachments and bounded context. HTTP route registration lives in `app/routes/realtime/`. |
 | `visual/` | Visual input, grounding, understanding and output coordination; `generation.py` owns image generation and `generation_quota.py` owns spending guards. |
