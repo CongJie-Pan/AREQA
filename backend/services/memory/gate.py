@@ -89,7 +89,13 @@ SENSITIVE_CONTEXT_KEYWORDS = (
     "血壓", "心率", "脈搏", "胸痛", "呼吸", "頭暈", "藥物", "用藥", "醫生", "醫師",
     "健康", "生病", "焦慮", "憂鬱", "自殺", "心理", "家庭", "父親", "母親", "財務", "債務",
 )
-EXPLICIT_RECALL_KEYWORDS = ("延續", "接續", "之前", "上次", "昨天", "前一個對話", "結合先前")
+# "Do you remember" questions count as recall. Bare "記得" / "還記得我" are
+# excluded: they also appear in remember-this instructions and in the user's own
+# reminiscences, and explicit recall bypasses the sensitive-context denial.
+EXPLICIT_RECALL_KEYWORDS = (
+    "延續", "接續", "之前", "上次", "昨天", "前一個對話", "結合先前",
+    "你還記得", "妳還記得", "記不記得", "還記得嗎", "記得嗎",
+)
 RECENT_WORKING_CONTEXT_PATTERNS = (
     r"最近(?:在)?(?:讀|看|提|聊|討論|問|學|研究|處理|做|寫)",
     r"最近(?:讀|看|提|聊|討論|問|學|研究|處理|做|寫)(?:過)?(?:的)?(?:書|文章|作品|問題|主題|內容|事情|任務|專案)",
