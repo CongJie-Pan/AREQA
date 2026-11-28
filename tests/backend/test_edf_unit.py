@@ -8,10 +8,10 @@ from fastapi.testclient import TestClient
 from pathlib import Path
 from datetime import datetime, timedelta
 
-import memory_store as mem_store_module
-from memory_store import MemoryStore, init_global_store, get_global_store
-from backend.compaction import evaluate_student_state
-from backend.gum_integration import async_evaluate_and_update_state
+import services.memory.store.service as mem_store_module
+from services.memory.store.service import MemoryStore, init_global_store, get_global_store
+from services.memory.scoring import evaluate_student_state
+from services.memory.gum.runtime import async_evaluate_and_update_state
 from backend.main import app, classify_dialogue_policy
 from auth import get_current_user
 import services.compeer_scheduler as compeer
@@ -44,7 +44,7 @@ def tmp_store():
             if key in self.data: del self.data[key]
         def pipeline(self, transaction=True): return FakePipeline(self)
         
-    with patch("memory_store.get_redis") as mock_mem_redis, \
+    with patch("services.memory.store.service.get_redis") as mock_mem_redis, \
          patch("services.compeer_scheduler.get_redis") as mock_comp_redis:
         fake_r = FakeRedis()
         mock_mem_redis.return_value = fake_r
@@ -60,7 +60,7 @@ def tmp_store():
 
 # U-01 to U-04: log_action API
 @pytest.mark.asyncio
-@patch("gum_integration.push_observation")
+@patch("services.memory.gum.runtime.push_observation")
 async def test_log_action_valid_request(mock_push, tmp_store, caplog):
     store, fake_r = tmp_store
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -91,7 +91,7 @@ async def test_log_action_missing_action_field(tmp_store):
         assert res.status_code == 422
 
 @pytest.mark.asyncio
-@patch("gum_integration.push_observation")
+@patch("services.memory.gum.runtime.push_observation")
 async def test_log_action_memory_cap_at_50(mock_push, tmp_store):
     store, fake_r = tmp_store
     # Write 50 mock behavior signals
@@ -110,7 +110,7 @@ async def test_log_action_memory_cap_at_50(mock_push, tmp_store):
     assert any(signal["type"] == "new" for signal in signals_after)
 
 @pytest.mark.asyncio
-@patch("gum_integration.push_observation")
+@patch("services.memory.gum.runtime.push_observation")
 async def test_log_action_concurrent_writes(mock_push, tmp_store):
     store, fake_r = tmp_store
     async def post_action(idx):

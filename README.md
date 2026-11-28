@@ -194,23 +194,6 @@ backend/
 ├── auth.py                         # Supabase JWT 驗證與 current_user 依賴
 ├── job_store.py                    # 背景工作佇列 / agent job worker
 ├── redis_client.py                 # Redis 連線封裝
-├── memory_gate.py                  # 使用者訊息記憶資格與低資訊訊息分類
-├── gum_integration.py              # GUM 長期記憶框架整合層
-│                                   #   TextObserver / init_gum_instance
-│                                   #   push_observation / query_cold_memory_for_context
-│                                   #   delayed_reply_writer (信箱 Avatar 延遲回信)
-│                                   #   ObservationQueueWorker (debounce 批次處理)
-│                                   #   async_evaluate_and_update_state (EDF 狀態更新)
-├── memory_store.py                 # 短期熱記憶管理
-│                                   #   MemoryStore (Redis: hot_memory + user_profile + working_memory)
-│                                   #   learner_state / current_strategy / chat_avatar:{conversation_id}
-│                                   #   current_focus_conversation_id (working memory 作用域)
-├── cold_memory.py                  # 長期冷記憶檢索
-│                                   #   ColdMemoryRetriever (PostgreSQL + pgvector)
-│                                   #   propositions 全文檢索 + vec_memory 向量檢索 + RRF 融合
-├── compaction.py                   # GUM 記憶壓縮與衰減算法
-│                                   #   calculate_activation_score (Activation Score)
-│                                   #   STITCH 歸檔：符合來源條件的熱記憶 → 結構化冷記憶
 ├── mailbox_store.py                # 信箱訊息持久化
 │                                   #   MailboxStore (Redis mailbox + delayed queue)
 │                                   #   add_mail / get_all_mails / mark_as_read
@@ -220,6 +203,13 @@ backend/
 ├── agents/                         # agent runtime 與 tutor agent
 │
 ├── services/
+│   ├── memory/                     # 記憶領域 (唯一位置)
+│   │   ├── gate.py                 # 使用者訊息記憶資格與低資訊訊息分類
+│   │   ├── cold.py                 # ColdMemoryRetriever：propositions 全文檢索 + vec_memory 向量檢索 + RRF
+│   │   ├── scoring.py              # Activation Score 衰減、STITCH 標籤、EDF 學生狀態評估
+│   │   ├── store/                  # MemoryStore (Redis: hot_memory + user_profile + working_memory)
+│   │   ├── gum/                    # GUM runtime / ObservationQueueWorker / reflection / compaction
+│   │   └── ingestion/              # 受信任 evidence 寫入流程
 │   ├── orchestration_service.py    # 串流總編排器 (turn plan / context / retrieval / stream)
 │   ├── turn_plan_service.py        # 前景路由與模型呼叫預算規劃
 │   ├── turn_intake_service.py      # 角色扮演入口、停止角色扮演與 turn intake
@@ -415,7 +405,7 @@ flowchart TD
     subgraph MEM ["📦 Memory 模塊（共用）"]
         direction LR
         HotMem["短期熱記憶\nMemoryStore\nRedis: hot_memory / user_profile"]
-        ColdMem["長期冷記憶\nGUM + PostgreSQL\npropositions / vec_memory\ncold_memory.py 語意搜尋\ncompaction.py 衰減計算"]
+        ColdMem["長期冷記憶\nGUM + PostgreSQL\npropositions / vec_memory\nservices/memory/cold.py 語意搜尋\nservices/memory/scoring.py 衰減計算"]
     end
 
     subgraph API_A ["⚡ POST /api/v1/stream  ·  main.py"]
@@ -474,8 +464,8 @@ flowchart TD
 
     subgraph MEM_B ["📦 Memory 模塊（共用）"]
         direction LR
-        HotMem_B["短期熱記憶\nRedis hot_memory\nmemory_store.py\n(scroll 日誌 + learner_state)"]
-        ColdMem_B["長期冷記憶\nGUM + PostgreSQL\ngum_integration.py"]
+        HotMem_B["短期熱記憶\nRedis hot_memory\nservices/memory/store\n(scroll 日誌 + learner_state)"]
+        ColdMem_B["長期冷記憶\nGUM + PostgreSQL\nservices/memory/gum"]
     end
 
     subgraph API_B ["⚡ FastAPI · main.py"]
@@ -563,7 +553,7 @@ flowchart TD
 
     subgraph MEM_D ["📦 Memory 模塊"]
         AllMem["get_all_memory()\nCold Memory 來源分類"]
-        ColdMem_D["ColdMemoryRetriever\ncold_memory.py\nPostgreSQL propositions\n全文檢索 + pgvector 向量檢索"]
+        ColdMem_D["ColdMemoryRetriever\nservices/memory/cold.py\nPostgreSQL propositions\n全文檢索 + pgvector 向量檢索"]
     end
 
     UI_Gum -->|"① 請求記憶列表"| MemoryAPI
@@ -586,7 +576,7 @@ flowchart TD
 ### 1. 知識檢索與網路搜尋 (RAG & Web Search)
 
 - **文件 RAG（選配）**: `src/main/python/services/rag_service.py` 在 `ENABLE_INTERNAL_RAG=true` 時載入本地 `data/rag/faiss_index/` 與 `data/rag/bm25_index/`，整合 `FAISS` 向量檢索與 `BM25` 關鍵字檢索，透過倒數排名融合 (`RRF`) 與 API 重排模型 (`Reranker`) 取得最相關段落。
-- **使用者冷記憶檢索**: `backend/cold_memory.py` 使用 `DATABASE_URL` 連到 PostgreSQL，從 `propositions` 做全文檢索、從選配 `vec_memory` 做 pgvector 向量檢索，再以 RRF 融合結果。
+- **使用者冷記憶檢索**: `backend/services/memory/cold.py` 使用 `DATABASE_URL` 連到 PostgreSQL，從 `propositions` 做全文檢索、從選配 `vec_memory` 做 pgvector 向量檢索，再以 RRF 融合結果。
 - **注意力重排序 (Lost in the Middle Reordering)**: 將最高關聯度文獻置首尾，優化 LLM 長上下文注意力。
 - **Perplexity 聯網檢索**: 整合 Perplexity Search / Sonar 類搜尋能力，動態決定 `max_results`，並以對話 ID + 問題的 MD5 雜湊進行 Redis 快取（TTL 24 小時）。
 - **HyDE 查詢分解**: 使用 LLM 將使用者問題拆解為 `exact_entity` / `abstract_concept` 兩類子查詢，提升混合檢索的召回率。
@@ -618,15 +608,15 @@ flowchart TD
 
 ### 4. 記憶管理系統 (GUM + MemoryStore)
 
-- **短期熱記憶 (Hot Memory)**: `memory_store.py` 目前主要透過 Redis 管理 hot memory、user profile 與 working memory，儲存即時對話脈絡、學習狀態、待推播警示等。`current_focus` 與每筆 `recent_learning_points` 都綁定 `conversation_id`；主聊天路徑只注入目前 conversation 的暫時脈絡，legacy unscoped points 不會進入新對話。
-- **長期冷記憶 (Cold Memory / GUM)**: `gum_integration.py` 整合 GUM 框架，為每位使用者建立獨立 GUM instance。資料庫優先使用 `GUM_DATABASE_URL`，未設定時使用 `DATABASE_URL`；目前 cold memory 主路徑是 PostgreSQL 的 `propositions` 與選配 `vec_memory`。Observation 正常以 17 筆批次處理，閒置 reflection 或 `POST /api/v1/memory/flush` 也能處理未滿批次的 pending observations。
-- **記憶來源與保留政策**: 候選記憶保留原始使用者訊息作為 evidence，不把模型回答當成使用者事實。穩定偏好、背景與目標可自動保留；敏感或明顯負面能力判斷會拒絕自動升級；短期內容可附帶 30 天期限。模型抽取仍是候選產生器，最終是否寫入由 `backend/memory_gate.py` 的確定性政策再次判定。
+- **短期熱記憶 (Hot Memory)**: `services/memory/store/` 目前主要透過 Redis 管理 hot memory、user profile 與 working memory，儲存即時對話脈絡、學習狀態、待推播警示等。`current_focus` 與每筆 `recent_learning_points` 都綁定 `conversation_id`；主聊天路徑只注入目前 conversation 的暫時脈絡，legacy unscoped points 不會進入新對話。
+- **長期冷記憶 (Cold Memory / GUM)**: `services/memory/gum/` 整合 GUM 框架，為每位使用者建立獨立 GUM instance。資料庫優先使用 `GUM_DATABASE_URL`，未設定時使用 `DATABASE_URL`；目前 cold memory 主路徑是 PostgreSQL 的 `propositions` 與選配 `vec_memory`。Observation 正常以 17 筆批次處理，閒置 reflection 或 `POST /api/v1/memory/flush` 也能處理未滿批次的 pending observations。
+- **記憶來源與保留政策**: 候選記憶保留原始使用者訊息作為 evidence，不把模型回答當成使用者事實。穩定偏好、背景與目標可自動保留；敏感或明顯負面能力判斷會拒絕自動升級；短期內容可附帶 30 天期限。模型抽取仍是候選產生器，最終是否寫入由 `backend/services/memory/gate.py` 的確定性政策再次判定。
 - **Memory Ingestion Service**: `memory_ingestion_service.py` 將 user evidence 轉成候選、profile 或 cold memory 操作，並保留 provenance；`memory_semantic_analyzer.py` 可在設定啟用時做語意候選分析，預設仍受 deterministic policy 約束。
 - **Explicit Recall Cache**: `explicit_memory_cache.py` 為明確記憶召回提供短 TTL in-process cache，減少同一 conversation 內重複查詢長期記憶的成本。
 - **Hot Memory compact / STITCH**: 目前只有來源為 `user_message` 或 `verified_user_evidence` 的 hot item 才能進入 compact。寫入 PostgreSQL 前保留使用者原文，STITCH tags 只作為 metadata；只有 `insert_memory` 成功後才刪除 hot item，避免寫入失敗造成資料遺失。這不是把所有 hot memory 無條件轉成 cold memory。
 - **記憶頁資料範圍**: `GET /api/v1/memory` 與 `GumPanel` 只顯示 Redis user profile 中的明確記憶，以及被標記為正式 `cold_memory` 的 PostgreSQL propositions。候選記憶、learning state、一般 hot/working memory 與既有 `legacy_unverified` propositions 不會顯示在記憶頁；既有 legacy 資料目前不會被自動清除。
 - **敏感脈絡保護**: 健康、心理、家庭與財務類問題預設不自動檢索跨對話 episodic memory，避免弱相關舊內容主導目前回答；durable user profile 仍可供一般個人化使用。
-- **記憶壓縮 (STITCH)**: `compaction.py` 實作 GUM 衰減計算（Activation Score）；`gum_integration.py` 只會將通過來源驗證的 user evidence 歸檔為結構化長期記憶，STITCH 標籤保留在 metadata，不取代使用者原文。
+- **記憶壓縮 (STITCH)**: `services/memory/scoring.py` 實作 GUM 衰減計算（Activation Score）；`services/memory/gum/` 只會將通過來源驗證的 user evidence 歸檔為結構化長期記憶，STITCH 標籤保留在 metadata，不取代使用者原文。
 - **ObservationQueueWorker**: 去抖動 (3s debounce) 批次處理觀察訊息，防止高頻寫入。
 - **低資訊問候短路**: `你好`、`hi`、`在嗎` 這類低資訊訊息會直接回固定寒暄，不會進入 long-term memory retrieval，也不會擴寫上一輪任務脈絡。
 
@@ -649,7 +639,7 @@ flowchart TD
 ### 7. 模型與服務配置
 
 - **集中式預設模型**: `backend/config.py` 定義 policy / HyDE / GUM / ZPD、主回答、suggestion、embedding、記憶語意分析與 visual understanding 模型；目前 policy / HyDE / GUM / ZPD 使用 `google/gemini-3.1-flash-lite`，主回答 instruct / thinking 使用 `google/gemini-3.7-flash`。
-- **專用模型例外**: 部分服務有專用模型設定，例如 suggestion 使用 `google/gemini-2.5-flash-lite`，`router_service.py` 使用 `qwen/qwen3-vl-8b-instruct`，`cold_memory.py` 的 embedding 預設使用 `openai/text-embedding-3-small`。
+- **專用模型例外**: 部分服務有專用模型設定，例如 suggestion 使用 `google/gemini-2.5-flash-lite`，`router_service.py` 使用 `qwen/qwen3-vl-8b-instruct`，`services/memory/cold.py` 的 embedding 預設使用 `openai/text-embedding-3-small`。
 - **OpenRouter 統一出口**: 主 LLM、標題生成、GUM、推薦問題、embedding 與部分檢索相關流程共用 `OPENROUTER_API_KEY`。
 - **Visual Search 例外**: Perplexity image search 使用 `PERPLEXITY_API_KEY` 與 `perplexity_visual_search_model`，目前預設模型為 `sonar`；Tavily 與 SerpAPI 分別使用 `TAVILY_API_KEY`、`SERPAPI_API_KEY` 作為選配圖片 provider。
 

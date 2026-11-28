@@ -1,6 +1,6 @@
 import inspect
 
-from backend.compaction import generate_stitch_tags
+from services.memory.scoring import generate_stitch_tags
 from services.memory.gum.compaction import run_compaction
 
 

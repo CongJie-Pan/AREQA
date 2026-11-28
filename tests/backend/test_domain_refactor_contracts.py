@@ -10,9 +10,6 @@ from fastapi.testclient import TestClient
 
 
 @pytest.mark.parametrize("legacy,canonical", [
-    ("memory_store", "services.memory.store.service"),
-    ("gum_integration", "services.memory.gum.runtime"),
-    ("memory_gate", "services.memory.gate"),
     ("services.memory_ingestion_service", "services.memory.ingestion.service"),
     ("services.query_policy_service", "services.query_policy.classifier"),
     ("services.visual_answer_service", "services.visual_answer.service"),
@@ -24,23 +21,21 @@ def test_legacy_imports_share_the_canonical_module(legacy, canonical):
     assert importlib.import_module("backend." + legacy) is implementation
 
 
-def test_memory_store_singleton_is_shared_across_import_paths(monkeypatch):
-    canonical = importlib.import_module("services.memory.store.service")
-    legacy = importlib.import_module("backend.memory_store")
-    redis = object()
-    monkeypatch.setattr(canonical, "_global_store", None)
-    monkeypatch.setattr(canonical, "get_redis", lambda: redis)
-    store = legacy.init_global_store(budget_limit=1234)
-    assert canonical.get_global_store() is store
-    assert legacy.get_global_store().redis is redis
-    assert canonical.get_global_store().budget_limit == 1234
+@pytest.mark.parametrize("removed", [
+    "memory_store", "gum_integration", "memory_gate", "cold_memory", "compaction",
+])
+def test_flat_memory_modules_are_removed(removed):
+    """Memory code lives only under services.memory; flat aliases must not return."""
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module(removed)
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("backend." + removed)
 
 
 @pytest.mark.asyncio
 async def test_concurrent_gum_initialization_shares_lock_and_stops_workers(monkeypatch, tmp_path):
-    """Mixed imports must create one instance per user and one queue worker."""
+    """Concurrent calls must create one instance per user and one queue worker."""
     runtime = importlib.import_module("services.memory.gum.runtime")
-    legacy = importlib.import_module("backend.gum_integration")
     for name in (
         "gum_instances", "text_observers", "importance_sums", "interaction_counts",
         "last_interaction_times", "reflection_locks", "_gum_init_locks",
@@ -69,14 +64,14 @@ async def test_concurrent_gum_initialization_shares_lock_and_stops_workers(monke
     monkeypatch.setattr(runtime, "gum", make_gum)
     monkeypatch.setattr(runtime, "ObservationQueueWorker", worker_factory)
     results = await asyncio.gather(
-        legacy.get_gum_instance("user-a"), runtime.get_gum_instance("user-a"),
+        runtime.get_gum_instance("user-a"), runtime.get_gum_instance("user-a"),
         runtime.get_gum_instance("user-b"),
     )
     assert results[0][0] is results[1][0]
     assert results[0][0] is not results[2][0]
     assert len(instances) == 2
     worker_factory.assert_called_once()
-    await legacy.stop_gum_instance()
+    await runtime.stop_gum_instance()
     worker.stop.assert_awaited_once()
     assert runtime.gum_instances == {}
     assert runtime.obs_worker is None
@@ -131,7 +126,7 @@ async def test_cold_recall_preserves_database_location_and_user_scope(monkeypatc
     """Moving the context module must not move the existing database path."""
     from pathlib import Path
 
-    import cold_memory
+    import services.memory.cold as cold_memory
     from services.memory.gum import context
     from services.memory.store import service as store_service
 

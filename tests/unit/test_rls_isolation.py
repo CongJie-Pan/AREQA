@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from backend.cold_memory import ColdMemoryRetriever
+from services.memory.cold import ColdMemoryRetriever
 
 @pytest.mark.asyncio
 async def test_rls_isolation_context_injection():
@@ -15,8 +15,8 @@ async def test_rls_isolation_context_injection():
 
     mock_async_session_instance.execute = AsyncMock(side_effect=mock_execute)
     
-    with patch("backend.cold_memory.get_engine"), \
-         patch("backend.cold_memory.AsyncSession") as MockAsyncSession:
+    with patch("services.memory.cold.get_engine"), \
+         patch("services.memory.cold.AsyncSession") as MockAsyncSession:
         
         MockAsyncSession.return_value.__aenter__.return_value = mock_async_session_instance
         

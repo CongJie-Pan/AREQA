@@ -22,7 +22,7 @@ from services import orchestration_service as orchestration
 from app import prompts
 from services.query_policy_service import default_response_policy
 from services.post_turn_service import PostTurnService
-import memory_store
+import services.memory.store.service as memory_store
 
 from config import settings
 

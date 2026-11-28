@@ -186,11 +186,11 @@ Perform periodic samples of cold candidates and verified profile entries. Audit 
 The policy is enforced by the following planned boundaries:
 
 - `backend/services/hot_memory_service.py`: typed hot entries, TTL filtering, prompt-safety filtering, and cold-export eligibility.
-- `backend/memory_store.py`: compatible persistence for hot, working, cold-candidate, and profile state.
-- `backend/gum_integration.py`: prompt-safe hot snapshot and compaction handoff; no direct hot-to-cold writer.
+- `backend/services/memory/store/service.py`: compatible persistence for hot, working, cold-candidate, and profile state.
+- `backend/services/memory/gum/runtime.py`: prompt-safe hot snapshot and compaction handoff; no direct hot-to-cold writer.
 - `backend/services/memory_ingestion_service.py`: authoritative validation of user evidence, candidate creation, and promotion eligibility.
-- `backend/memory_gate.py`: speech-act, roleplay, low-information, and safety gating before preference matching.
-- `backend/memory_store.py`: evidence de-duplication, promotion revalidation, and guarded profile writes through `perform_memory_operation`.
+- `backend/services/memory/gate.py`: speech-act, roleplay, low-information, and safety gating before preference matching.
+- `backend/services/memory/store/service.py`: evidence de-duplication, promotion revalidation, and guarded profile writes through `perform_memory_operation`.
 - `backend/services/orchestration_service.py`: controller-only sequencing; no independent memory policy or direct profile-memory write.
 
 No new memory-producing code path may bypass these boundaries. New memory types require an explicit category, source rule, retention policy, read policy, promotion rule, and regression test before they are enabled.

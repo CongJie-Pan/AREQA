@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent / "backend"))
-from memory_store import MemoryStore
+from services.memory.store.service import MemoryStore
 
 @pytest.mark.asyncio
 async def test_memory_store_isolation():
@@ -33,7 +33,7 @@ async def test_memory_store_isolation():
     pipe.execute = AsyncMock()
     mock_redis.pipeline = MagicMock(return_value=pipe)
     
-    with patch("memory_store.get_redis", return_value=mock_redis):
+    with patch("services.memory.store.service.get_redis", return_value=mock_redis):
         store = MemoryStore()
         
         # User A writes data

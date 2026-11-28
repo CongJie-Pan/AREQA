@@ -7,11 +7,11 @@ from unittest.mock import AsyncMock, patch, MagicMock
 from httpx import AsyncClient, ASGITransport
 from backend.main import app
 from auth import get_current_user
-from memory_store import init_global_store, get_global_store
-import memory_store as mem_store_module
+from services.memory.store.service import init_global_store, get_global_store
+import services.memory.store.service as mem_store_module
 import services.compeer_scheduler as compeer
-from backend.gum_integration import async_evaluate_and_update_state
-from backend.compaction import evaluate_student_state
+from services.memory.gum.runtime import async_evaluate_and_update_state
+from services.memory.scoring import evaluate_student_state
 
 @pytest.fixture
 def tmp_store():
@@ -39,7 +39,7 @@ def tmp_store():
             if key in self.data: del self.data[key]
         def pipeline(self, transaction=True): return FakePipeline(self)
         
-    with patch("memory_store.get_redis") as mock_mem_redis, \
+    with patch("services.memory.store.service.get_redis") as mock_mem_redis, \
          patch("services.compeer_scheduler.get_redis") as mock_comp_redis:
         fake_r = FakeRedis()
         fake_r.data["areqa:hot_memory:default_user"] = '{"current_learner_state": "RUN_REPEAT"}'
@@ -57,7 +57,7 @@ def tmp_store():
 
 @pytest.mark.asyncio
 @patch("backend.main.AsyncOpenAI")
-@patch("gum_integration.get_gum_instance")
+@patch("services.memory.gum.runtime.get_gum_instance")
 async def test_full_edf_dialogue_loop(mock_get_gum, mock_create, tmp_store):
     mock_gum = MagicMock()
     mock_get_gum.return_value = (mock_gum, MagicMock())
@@ -93,7 +93,7 @@ async def test_full_edf_dialogue_loop(mock_get_gum, mock_create, tmp_store):
     assert res.status_code == 200
 
 @pytest.mark.asyncio
-@patch("gum_integration.get_gum_instance")
+@patch("services.memory.gum.runtime.get_gum_instance")
 @patch("backend.main.push_observation")
 async def test_scaffolding_fading_flow(mock_push, mock_get_gum, tmp_store):
     mock_gum = MagicMock()
@@ -132,7 +132,7 @@ async def test_compeer_daily_schedule_e2e(mock_path, tmp_path, tmp_store):
     log_path.write_text('{"role": "user", "content": "hi"}\n')
     
     # Mock LLM calls inside compeer via gum_instance
-    with patch("gum_integration.get_gum_instance") as mock_get_gum:
+    with patch("services.memory.gum.runtime.get_gum_instance") as mock_get_gum:
         mock_gum = MagicMock()
         mock_observer = MagicMock()
         mock_observer.push_text = AsyncMock()

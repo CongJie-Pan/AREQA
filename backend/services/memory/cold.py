@@ -8,10 +8,7 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy import text
 import logging
 
-try:
-    from config import settings
-except ModuleNotFoundError:
-    from backend.config import settings
+from config import settings
 
 logger = logging.getLogger(__name__)
 

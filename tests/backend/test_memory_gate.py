@@ -1,6 +1,6 @@
 import pytest
 
-from backend.memory_gate import (
+from services.memory.gate import (
     apply_action_gate,
     apply_reflection_gate,
     classify_action,

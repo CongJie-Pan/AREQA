@@ -2,7 +2,7 @@ import pytest
 import asyncio
 from datetime import datetime, timedelta
 from unittest.mock import patch, AsyncMock, MagicMock
-from backend.gum_integration import (
+from services.memory.gum.runtime import (
     get_gum_instance,
     batch_process_observations,
     run_reflection_loop,
@@ -10,7 +10,7 @@ from backend.gum_integration import (
     gum_instances,
     text_observers
 )
-import backend.gum_integration as gi
+import services.memory.gum.runtime as gi
 
 @pytest.fixture(autouse=True)
 def reset_gum_instances():
@@ -27,7 +27,7 @@ def reset_gum_instances():
 @pytest.mark.asyncio
 async def test_get_gum_instance_multi_user():
     # Test getting instance for user_a
-    with patch("backend.gum_integration.gum") as mock_gum:
+    with patch("services.memory.gum.runtime.gum") as mock_gum:
         mock_instance_a = MagicMock()
         mock_instance_a.connect_db = AsyncMock()
         mock_instance_a.batcher = MagicMock()
@@ -64,8 +64,8 @@ async def test_batch_process_observations_multi_user_isolation():
     gi.gum_instances["user_a"] = mock_instance
     gi.text_observers["user_a"] = mock_text_obs
 
-    with patch("backend.gum_integration.get_gum_instance", new_callable=AsyncMock) as mock_get, \
-         patch("memory_store.get_global_store") as mock_store:
+    with patch("services.memory.gum.runtime.get_gum_instance", new_callable=AsyncMock) as mock_get, \
+         patch("services.memory.store.service.get_global_store") as mock_store:
         mock_get.return_value = (mock_instance, mock_text_obs)
         mock_store_inst = MagicMock()
         mock_store_inst.get_hot_memory = AsyncMock(return_value={})

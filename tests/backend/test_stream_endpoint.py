@@ -37,7 +37,7 @@ def isolate_stream_memory_dependencies():
         "backend.services.orchestration_service.MemoryQueryTool.execute",
         new_callable=AsyncMock,
         return_value=MagicMock(content={"cold": "", "working": ""}),
-    ), patch("memory_store.get_global_store", return_value=None):
+    ), patch("services.memory.store.service.get_global_store", return_value=None):
         yield
 
 class MockRagChunk:

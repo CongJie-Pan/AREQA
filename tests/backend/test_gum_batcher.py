@@ -3,7 +3,7 @@ import logging
 
 import pytest
 
-import backend.gum_integration  # noqa: F401 - registers the local GUM package path
+import services.memory.gum.runtime  # noqa: F401 - registers the local GUM package path
 from gum.batcher import ObservationBatcher
 from gum.gum import gum
 

@@ -2,21 +2,21 @@ import pytest
 import asyncio
 from unittest.mock import patch, MagicMock, AsyncMock
 
-from backend.gum_integration import async_evaluate_and_update_state
-from backend.memory_store import MemoryStore
+from services.memory.gum.runtime import async_evaluate_and_update_state
+from services.memory.store.service import MemoryStore
 
 @pytest.fixture
 def mock_store():
     store = AsyncMock()
     store.get_hot_memory.return_value = {}
-    with patch("memory_store.get_global_store", return_value=store):
+    with patch("services.memory.store.service.get_global_store", return_value=store):
         yield store
 
 @pytest.mark.asyncio
 async def test_state_evaluator_does_not_clear_chat_avatar_memory(mock_store):
     mock_store.get_hot_memory = AsyncMock(return_value={"active_avatar": "柏拉圖"})
     
-    with patch("compaction.evaluate_student_state", new_callable=AsyncMock) as mock_eval:
+    with patch("services.memory.scoring.evaluate_student_state", new_callable=AsyncMock) as mock_eval:
         mock_eval.return_value = {
             "learner_state": "TINKERING",
             "pedagogical_strategy": "NORMAL",
@@ -32,7 +32,7 @@ async def test_state_evaluator_does_not_clear_chat_avatar_memory(mock_store):
 async def test_avatar_not_cleared_when_same_person(mock_store):
     mock_store.get_hot_memory = AsyncMock(return_value={"active_avatar": "柏拉圖"})
     
-    with patch("compaction.evaluate_student_state", new_callable=AsyncMock) as mock_eval:
+    with patch("services.memory.scoring.evaluate_student_state", new_callable=AsyncMock) as mock_eval:
         mock_eval.return_value = {
             "learner_state": "TINKERING",
             "pedagogical_strategy": "NORMAL",
@@ -53,7 +53,7 @@ async def test_avatar_not_cleared_when_same_person(mock_store):
 async def test_avatar_changes_do_not_trigger_summon(mock_store):
     mock_store.get_hot_memory = AsyncMock(return_value={"active_avatar": "柏拉圖"})
     
-    with patch("compaction.evaluate_student_state", new_callable=AsyncMock) as mock_eval:
+    with patch("services.memory.scoring.evaluate_student_state", new_callable=AsyncMock) as mock_eval:
         mock_eval.return_value = {
             "learner_state": "TINKERING",
             "pedagogical_strategy": "NORMAL",

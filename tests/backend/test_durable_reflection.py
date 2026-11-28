@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from backend import gum_integration
+import services.memory.gum.runtime as gum_integration
 
 
 @pytest.mark.asyncio
@@ -13,7 +13,7 @@ async def test_session_reflection_is_persisted_when_job_store_is_available():
     gum_integration.importance_sums["user-1"] = 100
 
     with patch("job_store.get_agent_job_store", return_value=store), patch(
-        "backend.gum_integration.run_reflection", new_callable=AsyncMock
+        "services.memory.gum.runtime.run_reflection", new_callable=AsyncMock
     ) as reflection:
         job_id = await gum_integration.schedule_session_reflection(
             "user-1", conversation_id="conversation-1"
@@ -31,7 +31,7 @@ async def test_session_reflection_falls_back_without_durable_database():
     store.schedule = AsyncMock(return_value=None)
 
     with patch("job_store.get_agent_job_store", return_value=store), patch(
-        "backend.gum_integration.run_reflection", new_callable=AsyncMock
+        "services.memory.gum.runtime.run_reflection", new_callable=AsyncMock
     ) as reflection:
         await gum_integration.schedule_session_reflection("user-2")
         await __import__("asyncio").sleep(0)
@@ -47,7 +47,7 @@ async def test_compaction_is_persisted_when_job_store_is_available():
     gum_integration.importance_sums["user-3"] = 30
 
     with patch("job_store.get_agent_job_store", return_value=store), patch(
-        "backend.gum_integration.run_compaction", new_callable=AsyncMock
+        "services.memory.gum.runtime.run_compaction", new_callable=AsyncMock
     ) as compaction:
         job_id = await gum_integration.schedule_compaction("user-3")
         await __import__("asyncio").sleep(0)
@@ -63,7 +63,7 @@ async def test_compaction_falls_back_without_durable_database():
     store.schedule = AsyncMock(return_value=None)
 
     with patch("job_store.get_agent_job_store", return_value=store), patch(
-        "backend.gum_integration.run_compaction", new_callable=AsyncMock
+        "services.memory.gum.runtime.run_compaction", new_callable=AsyncMock
     ) as compaction:
         await gum_integration.schedule_compaction("user-4")
         await __import__("asyncio").sleep(0)

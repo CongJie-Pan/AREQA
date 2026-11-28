@@ -163,7 +163,7 @@ async def test_scheduler_isolates_each_user_failure(caplog):
         if user_id == "user-a":
             raise ConnectionError("redis unavailable")
 
-    with patch("memory_store.get_global_store", return_value=store), patch.object(
+    with patch("services.memory.store.service.get_global_store", return_value=store), patch.object(
         compeer,
         "_process_proactive_user",
         side_effect=process_user,
@@ -382,8 +382,8 @@ async def test_daily_scheduler_skips_reflection_after_today_attempt(monkeypatch)
     )
     store.update_hot_memory_async = AsyncMock()
 
-    with patch("memory_store.get_global_store", return_value=store), patch(
-        "gum_integration.run_reflection",
+    with patch("services.memory.store.service.get_global_store", return_value=store), patch(
+        "services.memory.gum.runtime.run_reflection",
         new=AsyncMock(),
     ) as mock_run_reflection, patch.object(
         compeer.asyncio,
@@ -405,8 +405,8 @@ async def test_daily_scheduler_records_attempt_before_reflection(monkeypatch):
     store.get_hot_memory = AsyncMock(return_value={})
     store.update_hot_memory_async = AsyncMock()
 
-    with patch("memory_store.get_global_store", return_value=store), patch(
-        "gum_integration.run_reflection",
+    with patch("services.memory.store.service.get_global_store", return_value=store), patch(
+        "services.memory.gum.runtime.run_reflection",
         new=AsyncMock(return_value=[]),
     ) as mock_run_reflection, patch.object(
         compeer.asyncio,
@@ -467,7 +467,7 @@ def mock_store():
     store.redis.incr = AsyncMock(return_value=1)
     store.redis.expire = AsyncMock()
     
-    with patch("memory_store.get_global_store", return_value=store), patch(
+    with patch("services.memory.store.service.get_global_store", return_value=store), patch(
         "backend.services.compeer_scheduler.get_redis", return_value=store.redis
     ):
         yield store
@@ -484,7 +484,7 @@ async def test_auto_proactive_disabled_skips_behavior_trigger_processing(
     scheduled = AsyncMock(return_value="task-1")
 
     with patch(
-        "gum_integration.detect_proactive_event_via_llm",
+        "services.memory.gum.runtime.detect_proactive_event_via_llm",
         new=AsyncMock(),
     ) as detect_event, patch.object(
         compeer,
@@ -542,8 +542,8 @@ async def test_safe_schedule_retains_trigger_on_durable_failure(mock_store):
 @pytest.mark.asyncio
 @patch("backend.services.compeer_scheduler.asyncio.sleep", new_callable=AsyncMock)
 @patch("mailbox_store.get_mailbox_store")
-@patch("gum_integration.generate_areqa_care_letter_via_llm", new_callable=AsyncMock)
-@patch("gum_integration.query_cold_memory_for_context", new_callable=AsyncMock)
+@patch("services.memory.gum.runtime.generate_areqa_care_letter_via_llm", new_callable=AsyncMock)
+@patch("services.memory.gum.runtime.query_cold_memory_for_context", new_callable=AsyncMock)
 @patch("backend.services.compeer_scheduler.is_in_cooldown", new_callable=AsyncMock)
 async def test_trigger_proactive_schedules_areqa_care_mail(mock_in_cooldown, mock_query, mock_gen, mock_get_mailbox, mock_sleep, mock_store):
     # Setup hot memory with trigger_proactive = True
@@ -584,9 +584,9 @@ async def test_trigger_proactive_schedules_areqa_care_mail(mock_in_cooldown, moc
 @pytest.mark.asyncio
 @patch("backend.services.compeer_scheduler.asyncio.sleep", new_callable=AsyncMock)
 @patch("mailbox_store.get_mailbox_store")
-@patch("gum_integration.generate_areqa_care_letter_via_llm", new_callable=AsyncMock)
-@patch("gum_integration.query_cold_memory_for_context", new_callable=AsyncMock)
-@patch("gum_integration.get_hot_memory_snapshot", new_callable=AsyncMock)
+@patch("services.memory.gum.runtime.generate_areqa_care_letter_via_llm", new_callable=AsyncMock)
+@patch("services.memory.gum.runtime.query_cold_memory_for_context", new_callable=AsyncMock)
+@patch("services.memory.gum.runtime.get_hot_memory_snapshot", new_callable=AsyncMock)
 @patch("backend.services.compeer_scheduler.is_in_cooldown", new_callable=AsyncMock)
 async def test_trigger_proactive_allows_topic_specific_care_with_current_focus(
     mock_in_cooldown,
@@ -678,10 +678,10 @@ async def test_behavior_signals_schedule_proactive_mail_without_legacy_obs(mock_
         "tick_proactive_schedule",
         new=AsyncMock(),
     ), patch(
-        "gum_integration.get_hot_memory_snapshot",
+        "services.memory.gum.runtime.get_hot_memory_snapshot",
         new=AsyncMock(return_value="【工作記憶 (Working Memory)】\n- Current focus: force"),
     ), patch(
-        "gum_integration.detect_proactive_event_via_llm",
+        "services.memory.gum.runtime.detect_proactive_event_via_llm",
         new=AsyncMock(
             return_value={
                 "has_event": True,
@@ -690,7 +690,7 @@ async def test_behavior_signals_schedule_proactive_mail_without_legacy_obs(mock_
             }
         ),
     ), patch(
-        "gum_integration.query_cold_memory_for_context",
+        "services.memory.gum.runtime.query_cold_memory_for_context",
         new=AsyncMock(return_value=""),
     ), patch.object(
         compeer,
@@ -738,7 +738,7 @@ async def test_behavior_signals_do_not_schedule_after_daily_limit(mock_store, ca
         "tick_proactive_schedule",
         new=AsyncMock(),
     ), patch(
-        "gum_integration.detect_proactive_event_via_llm",
+        "services.memory.gum.runtime.detect_proactive_event_via_llm",
         new=AsyncMock(),
     ) as detect_event, patch.object(
         compeer,
@@ -781,7 +781,7 @@ async def test_behavior_signals_do_not_schedule_within_proactive_mail_interval(
         "get_proactive_mail_interval_remaining_seconds",
         new=AsyncMock(return_value=3600),
     ), patch(
-        "gum_integration.detect_proactive_event_via_llm",
+        "services.memory.gum.runtime.detect_proactive_event_via_llm",
         new=AsyncMock(),
     ) as detect_event, patch.object(
         compeer,
@@ -941,10 +941,10 @@ async def test_behavior_trigger_rejection_logs_safe_reason(mock_store, caplog):
         "tick_proactive_schedule",
         new=AsyncMock(),
     ), patch(
-        "gum_integration.get_hot_memory_snapshot",
+        "services.memory.gum.runtime.get_hot_memory_snapshot",
         new=AsyncMock(return_value="【工作記憶 (Working Memory)】\n- Current focus: force"),
     ), patch(
-        "gum_integration.detect_proactive_event_via_llm",
+        "services.memory.gum.runtime.detect_proactive_event_via_llm",
         new=AsyncMock(
             return_value={
                 "has_event": False,

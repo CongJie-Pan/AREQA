@@ -3,8 +3,8 @@ import asyncio
 from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime
 
-from backend.gum_integration import push_observation
-import backend.gum_integration
+from services.memory.gum.runtime import push_observation
+import services.memory.gum.runtime
 
 class MockProposition:
     def __init__(self, id, text, confidence, status="active"):
@@ -33,7 +33,7 @@ def mock_gum_instance():
     return instance
 
 @pytest.mark.asyncio
-@patch("backend.gum_integration.get_gum_instance", new_callable=AsyncMock)
+@patch("services.memory.gum.runtime.get_gum_instance", new_callable=AsyncMock)
 async def test_memory_evolution_prune(mock_get_gum, mock_gum_instance):
     mock_text_observer = AsyncMock()
     mock_get_gum.return_value = (mock_gum_instance, mock_text_observer)
@@ -52,7 +52,7 @@ async def test_memory_evolution_prune(mock_get_gum, mock_gum_instance):
     mock_text_observer.push_text.assert_called_once_with("Student has mastered loops", user_id="test_user")
 
 @pytest.mark.asyncio
-@patch("backend.gum_integration.get_gum_instance", new_callable=AsyncMock)
+@patch("services.memory.gum.runtime.get_gum_instance", new_callable=AsyncMock)
 async def test_memory_evolution_bm25_fallback_and_markdown(mock_get_gum, mock_gum_instance):
     # Setup BM25 to fail (return empty)
     mock_gum_instance.query = AsyncMock(return_value=[])
@@ -69,7 +69,7 @@ async def test_memory_evolution_bm25_fallback_and_markdown(mock_get_gum, mock_gu
     ]
     mock_gum_instance.client.chat.completions.create = AsyncMock(return_value=mock_response)
     
-    backend.gum_integration.importance_sums = {}
+    services.memory.gum.runtime.importance_sums = {}
     
     mock_text_observer = AsyncMock()
     mock_get_gum.return_value = (mock_gum_instance, mock_text_observer)
@@ -84,4 +84,4 @@ async def test_memory_evolution_bm25_fallback_and_markdown(mock_get_gum, mock_gu
     mock_gum_instance.update_status.assert_called_once_with(2, "superseded")
 
     # Verify importance sum updated correctly
-    assert backend.gum_integration.importance_sums.get("test_user", 0) == 8
+    assert services.memory.gum.runtime.importance_sums.get("test_user", 0) == 8

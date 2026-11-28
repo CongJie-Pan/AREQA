@@ -909,7 +909,7 @@ async def test_execute_short_circuits_low_information_greeting_without_llm(
     service = OrchestrationService(mock_router, mock_rag, mock_suggestion, mock_client)
     request = MagicMock()
 
-    with patch("memory_store.get_global_store", return_value=None), \
+    with patch("services.memory.store.service.get_global_store", return_value=None), \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock):
         events = []
@@ -952,7 +952,7 @@ async def test_greeting_shortcut_follows_message_language_and_workspace(
 ):
     service = OrchestrationService(mock_router, mock_rag, mock_suggestion, mock_client)
 
-    with patch("memory_store.get_global_store", return_value=None), \
+    with patch("services.memory.store.service.get_global_store", return_value=None), \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock):
         events = [event async for event in service.execute(
@@ -974,7 +974,7 @@ async def test_execute_emits_visible_status_before_memory_work(
     request = MagicMock()
 
     store = MagicMock()
-    with patch("memory_store.get_global_store", return_value=store), \
+    with patch("services.memory.store.service.get_global_store", return_value=store), \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock):
         stream = service.execute(
@@ -1030,7 +1030,7 @@ async def test_execute_passes_structured_response_policy_to_prompt_assembly(
 
     service._node_llm_stream = llm_stream
 
-    with patch("memory_store.get_global_store", return_value=None), \
+    with patch("services.memory.store.service.get_global_store", return_value=None), \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value=response_policy), \
@@ -1079,7 +1079,7 @@ async def test_execute_injects_missing_visual_attachment_guard_before_main_model
 
     service._node_llm_stream = llm_stream
 
-    with patch("memory_store.get_global_store", return_value=None), \
+    with patch("services.memory.store.service.get_global_store", return_value=None), \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value=response_policy), \
@@ -1121,7 +1121,7 @@ async def test_execute_passes_accumulated_answer_to_suggestions(
 
     service._node_llm_stream = llm_stream
 
-    with patch("memory_store.get_global_store", return_value=None), \
+    with patch("services.memory.store.service.get_global_store", return_value=None), \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value="NORMAL"), \
@@ -1165,7 +1165,7 @@ async def test_execute_passes_planned_image_slots_to_visual_service(
 
     service._node_llm_stream = llm_stream
 
-    with patch("memory_store.get_global_store", return_value=None), \
+    with patch("services.memory.store.service.get_global_store", return_value=None), \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value="NORMAL"), \
@@ -1202,7 +1202,7 @@ async def test_execute_logs_safe_turn_latency_trace(
 
     service._node_llm_stream = llm_stream
 
-    with patch("memory_store.get_global_store", return_value=None), \
+    with patch("services.memory.store.service.get_global_store", return_value=None), \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[]):
         events = [event async for event in service.execute(
@@ -1246,7 +1246,7 @@ async def test_turn_plan_enabled_can_skip_general_policy_classifier_when_disable
 
     service._node_llm_stream = llm_stream
 
-    with patch("memory_store.get_global_store", return_value=None), \
+    with patch("services.memory.store.service.get_global_store", return_value=None), \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock) as mock_policy, \
          patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[]) as prompt_assembly:
@@ -1295,7 +1295,7 @@ async def test_turn_plan_enabled_runs_general_policy_classifier_by_default(
 
     service._node_llm_stream = llm_stream
 
-    with patch("memory_store.get_global_store", return_value=None), \
+    with patch("services.memory.store.service.get_global_store", return_value=None), \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value=response_policy) as mock_policy, \
          patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[]) as prompt_assembly:
@@ -1341,7 +1341,7 @@ async def test_visual_preflight_skips_blocking_work_after_policy_timeout(
 
     service._node_llm_stream = llm_stream
 
-    with patch("memory_store.get_global_store", return_value=None), \
+    with patch("services.memory.store.service.get_global_store", return_value=None), \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, side_effect=asyncio.TimeoutError), \
          patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[]):
@@ -1393,7 +1393,7 @@ async def test_optional_visual_policy_does_not_block_before_first_text(
 
     service._node_llm_stream = llm_stream
 
-    with patch("memory_store.get_global_store", return_value=None), \
+    with patch("services.memory.store.service.get_global_store", return_value=None), \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value=response_policy), \
          patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[]):
@@ -1445,7 +1445,7 @@ async def test_required_visual_policy_allows_blocking_preflight(
 
     service._node_llm_stream = llm_stream
 
-    with patch("memory_store.get_global_store", return_value=None), \
+    with patch("services.memory.store.service.get_global_store", return_value=None), \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value=response_policy), \
          patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[]):
@@ -1483,7 +1483,7 @@ async def test_turn_plan_disabled_keeps_legacy_policy_classifier(
 
     service._node_llm_stream = llm_stream
 
-    with patch("memory_store.get_global_store", return_value=None), \
+    with patch("services.memory.store.service.get_global_store", return_value=None), \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value="NORMAL") as mock_policy, \
          patch.object(service, "_node_prompt_assembly", new_callable=AsyncMock, return_value=[]) as prompt_assembly:
@@ -1527,7 +1527,7 @@ async def test_prompt_assembly_passes_explicit_recall_memory_runtime_settings(
         reason_code="EXPLICIT_RECALL_REQUEST",
     )
 
-    with patch("memory_store.get_global_store", return_value=None):
+    with patch("services.memory.store.service.get_global_store", return_value=None):
         await service._node_prompt_assembly(
             user_id="u1",
             conversation_id="explicit-conv",
@@ -1589,7 +1589,7 @@ async def test_prompt_assembly_builds_and_passes_parts_context(
         legacy_policy="NORMAL",
     )
 
-    with patch("memory_store.get_global_store", return_value=None):
+    with patch("services.memory.store.service.get_global_store", return_value=None):
         await service._node_prompt_assembly(
             user_id="u1",
             conversation_id="parts-conv",
@@ -1663,7 +1663,7 @@ async def test_prompt_assembly_skips_ungrounded_parts_llm_rewrite_by_default(
         legacy_policy="NORMAL",
     )
 
-    with patch("memory_store.get_global_store", return_value=None):
+    with patch("services.memory.store.service.get_global_store", return_value=None):
         await service._node_prompt_assembly(
             user_id="u1",
             conversation_id="ungrounded-parts-conv",
@@ -1714,7 +1714,7 @@ async def test_prompt_assembly_allows_attachment_parts_llm_rewrite(
         legacy_policy="NORMAL",
     )
 
-    with patch("memory_store.get_global_store", return_value=None):
+    with patch("services.memory.store.service.get_global_store", return_value=None):
         await service._node_prompt_assembly(
             user_id="u1",
             conversation_id="attachment-parts-conv",
@@ -1794,7 +1794,7 @@ async def test_explicit_never_search_mode_overrides_legacy_search_boolean(
     service._node_perplexity_search = fail_if_searched
     service._node_llm_stream = llm_stream
 
-    with patch("memory_store.get_global_store", return_value=None), \
+    with patch("services.memory.store.service.get_global_store", return_value=None), \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value="NORMAL"), \
@@ -1839,7 +1839,7 @@ async def test_legacy_auto_search_mode_is_disabled_by_default(
     service._node_perplexity_search = fail_if_searched
     service._node_llm_stream = llm_stream
 
-    with patch("memory_store.get_global_store", return_value=None), \
+    with patch("services.memory.store.service.get_global_store", return_value=None), \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value="NORMAL"), \
@@ -1884,7 +1884,7 @@ async def test_topic_finder_never_auto_searches_even_when_auto_search_is_enabled
     service._node_perplexity_search = fail_if_searched
     service._node_llm_stream = llm_stream
 
-    with patch("memory_store.get_global_store", return_value=None), \
+    with patch("services.memory.store.service.get_global_store", return_value=None), \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value="NORMAL"), \
@@ -1937,7 +1937,7 @@ async def test_auto_mode_with_attachment_skips_generic_search_and_rag(
         attachment_reason=AttachmentReason.GENERIC_PAPER_EXPLANATION,
     )
 
-    with patch("memory_store.get_global_store", return_value=None), \
+    with patch("services.memory.store.service.get_global_store", return_value=None), \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value=response_policy), \
@@ -2017,7 +2017,7 @@ async def test_pdf_overview_routes_to_local_rules_or_jev(
     post = AsyncMock(return_value={"answers": {"paper_intent": {"choice": "overview"}}})
     mock_client.with_options = MagicMock(return_value=SimpleNamespace(post=post))
 
-    with patch("memory_store.get_global_store", return_value=None), \
+    with patch("services.memory.store.service.get_global_store", return_value=None), \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock) as mock_policy, \
@@ -2082,7 +2082,7 @@ async def test_pdf_turn_streams_progress_steps_before_answer(
     }
     mock_client.with_options = MagicMock(return_value=SimpleNamespace(post=AsyncMock(return_value={})))
 
-    with patch("memory_store.get_global_store", return_value=None), \
+    with patch("services.memory.store.service.get_global_store", return_value=None), \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock), \
@@ -2137,7 +2137,7 @@ async def test_non_visual_pdf_turn_skips_blocking_page_rendering(
     post = AsyncMock(return_value={"answers": {"paper_intent": {"choice": "other"}}})
     mock_client.with_options = MagicMock(return_value=SimpleNamespace(post=post))
 
-    with patch("memory_store.get_global_store", return_value=None), \
+    with patch("services.memory.store.service.get_global_store", return_value=None), \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value="NORMAL"), \
@@ -2184,9 +2184,9 @@ async def test_durable_jobs_suppress_in_process_edf_and_reflection_tasks(
 
     service._node_llm_stream = llm_stream
 
-    with patch("memory_store.get_global_store", return_value=memory_store), \
+    with patch("services.memory.store.service.get_global_store", return_value=memory_store), \
          patch("job_store.get_agent_job_store", return_value=durable_store), \
-         patch("gum_integration.push_reflection_observation", new_callable=AsyncMock) as reflection, \
+         patch("services.memory.gum.runtime.push_reflection_observation", new_callable=AsyncMock) as reflection, \
          patch("services.compeer_scheduler.set_last_interaction_time", new_callable=AsyncMock), \
          patch("backend.services.orchestration_service.async_evaluate_and_update_state", new_callable=AsyncMock) as edf, \
          patch("backend.services.orchestration_service.classify_dialogue_policy", new_callable=AsyncMock, return_value="NORMAL"), \
@@ -2270,7 +2270,7 @@ async def test_generated_chat_tool_blocks_are_not_replaced_by_visual_search(
         yield 'event: answer_blocks\ndata: ' + json.dumps([block]) + '\n\n'
         yield 'event: accumulator\ndata: ' + json.dumps({'accumulator': '', 'generated_blocks': [block]}) + '\n\n'
     service._node_llm_stream = llm_stream
-    with patch('memory_store.get_global_store', return_value=None), \
+    with patch('services.memory.store.service.get_global_store', return_value=None), \
          patch('services.compeer_scheduler.set_last_interaction_time', new_callable=AsyncMock), \
          patch('backend.services.orchestration_service.async_evaluate_and_update_state', new_callable=AsyncMock), \
          patch('backend.services.orchestration_service.classify_dialogue_policy', new_callable=AsyncMock, return_value=ResponsePolicy(task_intent=TaskIntent.ANSWER_EXAM, answer_depth=AnswerDepth.DIRECT, tone=ResponseTone.PLAIN, structure=ResponseStructure.SHORT, followup_mode=FollowupMode.NONE, legacy_policy='NORMAL')), \

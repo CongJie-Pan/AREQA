@@ -1,7 +1,7 @@
 import pytest
 import json
 from unittest.mock import AsyncMock, patch
-from backend.compaction import generate_stitch_tags
+from services.memory.scoring import generate_stitch_tags
 
 @pytest.fixture
 def mock_llm_client():

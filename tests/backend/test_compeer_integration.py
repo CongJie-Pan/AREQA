@@ -9,7 +9,7 @@ def test_proactive_check_returns_null_when_empty():
     from backend.main import get_current_user
     app.dependency_overrides[get_current_user] = lambda: "test_user"
     
-    with patch("memory_store.get_global_store") as mock_get_store:
+    with patch("services.memory.store.service.get_global_store") as mock_get_store:
         mock_store = AsyncMock()
         mock_store.get_and_clear_pending_alert.return_value = None
         mock_get_store.return_value = mock_store
@@ -24,7 +24,7 @@ def test_log_action_compeer_rejected_triggers_cooldown():
     app.dependency_overrides[get_current_user] = lambda: "test_user"
     
     with patch("services.compeer_scheduler.set_cooldown", new_callable=AsyncMock) as mock_set_cooldown, \
-         patch("memory_store.get_global_store") as mock_get_store:
+         patch("services.memory.store.service.get_global_store") as mock_get_store:
         mock_store = AsyncMock()
         mock_store.get_learner_state.return_value = "default"
         mock_get_store.return_value = mock_store

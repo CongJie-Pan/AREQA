@@ -6,11 +6,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-import memory_store as mem_store_module
+import services.memory.store.service as mem_store_module
 from auth import get_current_user
 from backend.main import app
 from config import settings
-from memory_store import get_global_store, init_global_store
+from services.memory.store.service import get_global_store, init_global_store
 import services.compeer_scheduler as compeer
 
 
@@ -85,7 +85,7 @@ def behavior_signal_store():
 
     old_store = mem_store_module._global_store
     fake_redis = FakeRedis()
-    with patch("memory_store.get_redis", return_value=fake_redis), patch(
+    with patch("services.memory.store.service.get_redis", return_value=fake_redis), patch(
         "services.compeer_scheduler.get_redis",
         return_value=fake_redis,
     ):
@@ -139,10 +139,10 @@ async def test_log_action_behavior_signals_drive_compeer_schedule_once(
         "tick_proactive_schedule",
         new=AsyncMock(),
     ), patch(
-        "gum_integration.get_hot_memory_snapshot",
+        "services.memory.gum.runtime.get_hot_memory_snapshot",
         new=AsyncMock(return_value="【工作記憶 (Working Memory)】\n- Current focus: force"),
     ), patch(
-        "gum_integration.detect_proactive_event_via_llm",
+        "services.memory.gum.runtime.detect_proactive_event_via_llm",
         new=AsyncMock(
             return_value={
                 "has_event": True,
@@ -151,7 +151,7 @@ async def test_log_action_behavior_signals_drive_compeer_schedule_once(
             }
         ),
     ), patch(
-        "gum_integration.query_cold_memory_for_context",
+        "services.memory.gum.runtime.query_cold_memory_for_context",
         new=AsyncMock(return_value=""),
     ), patch.object(
         compeer,

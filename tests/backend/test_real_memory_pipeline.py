@@ -5,7 +5,7 @@ import pytest_asyncio
 from sqlalchemy import insert
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-import backend.gum_integration as gum_integration
+import services.memory.gum.runtime as gum_integration
 from gum.gum import gum
 from gum.models import Base, Proposition
 

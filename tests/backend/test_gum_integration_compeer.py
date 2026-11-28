@@ -1,13 +1,13 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from backend.gum_integration import (
+from services.memory.gum.runtime import (
     detect_proactive_event_via_llm,
     generate_areqa_care_letter_via_llm,
     generate_scaffolding_message_via_llm,
     run_reflection
 )
-import backend.gum_integration as gi
+import services.memory.gum.runtime as gi
 
 @pytest.fixture(autouse=True)
 def mock_gum_instance():
@@ -15,7 +15,7 @@ def mock_gum_instance():
     mock_instance.client.chat.completions.create = AsyncMock()
     mock_instance.model = "test-model"
     with patch.object(gi, "gum_instance", mock_instance, create=True), \
-         patch("backend.gum_integration.get_gum_instance", new_callable=AsyncMock) as mock_get_gum:
+         patch("services.memory.gum.runtime.get_gum_instance", new_callable=AsyncMock) as mock_get_gum:
         mock_get_gum.return_value = (mock_instance, AsyncMock())
         yield mock_instance
 
@@ -119,7 +119,7 @@ async def test_run_reflection_returns_insights_list(mock_gum_instance):
     mock_response.choices = [MagicMock(message=MagicMock(content='{"insights": ["Insight 1", "Insight 2"]}'))]
     mock_gum_instance.client.chat.completions.create.return_value = mock_response
     
-    with patch("memory_store.get_global_store", return_value=None):
+    with patch("services.memory.store.service.get_global_store", return_value=None):
         insights = await run_reflection(user_id="test_user")
     
     assert len(insights) == 2

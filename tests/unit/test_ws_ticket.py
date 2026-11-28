@@ -16,7 +16,7 @@ def mock_store():
     return store
 
 def test_ws_ticket_getdel(mock_store):
-    with patch("memory_store.get_global_store", return_value=mock_store):
+    with patch("services.memory.store.service.get_global_store", return_value=mock_store):
         client = TestClient(app)
         
         # First connection should succeed (GETDEL returns user_123)

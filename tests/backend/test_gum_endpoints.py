@@ -52,7 +52,7 @@ def test_get_memory_endpoint_returns_profile_and_cold_memory_only():
         "confidence": 0.8,
         "updated_at": None,
         "memory_type": "cold_memory",
-    }]), patch("memory_store.get_global_store", return_value=mock_store):
+    }]), patch("services.memory.store.service.get_global_store", return_value=mock_store):
         response = client.get("/api/v1/memory")
 
     assert response.status_code == 200
@@ -74,10 +74,10 @@ def test_memory_debug_endpoint_returns_memory_layers():
     mock_store.get_behavior_signals.return_value = [{"type": "scroll"}]
     mock_store.get_cold_candidates.return_value = [{"text": "reflection insight"}]
 
-    with patch("memory_store.get_global_store", return_value=mock_store), \
+    with patch("services.memory.store.service.get_global_store", return_value=mock_store), \
          patch("backend.main.get_all_memory", new_callable=AsyncMock, return_value=[]), \
-         patch("gum_integration.get_pending_observation_count", new_callable=AsyncMock, return_value=0), \
-         patch("gum_integration.get_hot_memory_snapshot", new_callable=AsyncMock, return_value="snapshot"):
+         patch("services.memory.gum.runtime.get_pending_observation_count", new_callable=AsyncMock, return_value=0), \
+         patch("services.memory.gum.runtime.get_hot_memory_snapshot", new_callable=AsyncMock, return_value="snapshot"):
         response = client.get("/api/v1/memory/debug")
 
     assert response.status_code == 200
@@ -92,7 +92,7 @@ def test_memory_debug_endpoint_returns_memory_layers():
     assert data["prompt_snapshot"] == "snapshot"
 
 def test_delete_memory_endpoint():
-    with patch("gum_integration.get_gum_instance", new_callable=AsyncMock) as mock_get_gum:
+    with patch("services.memory.gum.runtime.get_gum_instance", new_callable=AsyncMock) as mock_get_gum:
         mock_gum_instance = AsyncMock()
         mock_get_gum.return_value = (mock_gum_instance, AsyncMock())
         mock_gum_instance.update_status = AsyncMock()
@@ -110,7 +110,7 @@ def test_delete_profile_memory_succeeds_when_working_sync_fails():
     mock_store.update_working_memory.side_effect = RuntimeError("working cache unavailable")
     memory_id = _memory_source_id("profile:explicit", "測試 profile 記憶")
 
-    with patch("memory_store.get_global_store", return_value=mock_store):
+    with patch("services.memory.store.service.get_global_store", return_value=mock_store):
         response = client.delete(f"/api/v1/memory/{memory_id}")
 
     assert response.status_code == 200
@@ -122,7 +122,7 @@ def test_delete_profile_memory_returns_404_when_id_is_unknown():
     mock_store = AsyncMock()
     mock_store.get_user_profile.return_value = {"explicit_memories": []}
 
-    with patch("memory_store.get_global_store", return_value=mock_store):
+    with patch("services.memory.store.service.get_global_store", return_value=mock_store):
         response = client.delete("/api/v1/memory/profile:explicit:unknown")
 
     assert response.status_code == 404
@@ -131,7 +131,7 @@ def test_delete_profile_memory_returns_404_when_id_is_unknown():
 def test_clear_working_memory_endpoint():
     mock_store = AsyncMock()
 
-    with patch("memory_store.get_global_store", return_value=mock_store):
+    with patch("services.memory.store.service.get_global_store", return_value=mock_store):
         response = client.delete("/api/v1/memory/working")
 
     assert response.status_code == 200
@@ -146,7 +146,7 @@ def test_confirm_candidate_promotes_with_user_confirmation():
     mock_store.promote_cold_candidate.return_value = {**candidate, "status": "promoted"}
     memory_id = _memory_source_id("candidate", candidate["text"])
 
-    with patch("memory_store.get_global_store", return_value=mock_store):
+    with patch("services.memory.store.service.get_global_store", return_value=mock_store):
         response = client.post(f"/api/v1/memory/candidates/{memory_id}/confirm")
 
     assert response.status_code == 200
@@ -162,7 +162,7 @@ def test_reject_candidate_preserves_suppression_record():
     mock_store.reject_cold_candidate.return_value = {**candidate, "status": "rejected"}
     memory_id = _memory_source_id("candidate", candidate["text"])
 
-    with patch("memory_store.get_global_store", return_value=mock_store):
+    with patch("services.memory.store.service.get_global_store", return_value=mock_store):
         response = client.post(f"/api/v1/memory/candidates/{memory_id}/reject")
 
     assert response.status_code == 200
@@ -170,7 +170,7 @@ def test_reject_candidate_preserves_suppression_record():
 
 
 def test_edit_memory_endpoint():
-    with patch("gum_integration.get_gum_instance", new_callable=AsyncMock) as mock_get_gum:
+    with patch("services.memory.gum.runtime.get_gum_instance", new_callable=AsyncMock) as mock_get_gum:
         mock_gum_instance = AsyncMock()
         mock_get_gum.return_value = (mock_gum_instance, AsyncMock())
         mock_gum_instance.update_text = AsyncMock()
@@ -190,7 +190,7 @@ def test_edit_explicit_profile_memory_persists_when_working_sync_fails():
     mock_store.update_working_memory.side_effect = RuntimeError("working cache unavailable")
     memory_id = _memory_source_id("profile:explicit", original)
 
-    with patch("memory_store.get_global_store", return_value=mock_store):
+    with patch("services.memory.store.service.get_global_store", return_value=mock_store):
         response = client.put(f"/api/v1/memory/{memory_id}", json={"text": replacement})
 
     assert response.status_code == 200
@@ -207,7 +207,7 @@ def test_edit_explicit_profile_memory_returns_404_when_id_is_unknown():
     mock_store = AsyncMock()
     mock_store.get_user_profile.return_value = {"explicit_memories": []}
 
-    with patch("memory_store.get_global_store", return_value=mock_store):
+    with patch("services.memory.store.service.get_global_store", return_value=mock_store):
         response = client.put(
             "/api/v1/memory/profile:explicit:unknown",
             json={"text": "replacement"},

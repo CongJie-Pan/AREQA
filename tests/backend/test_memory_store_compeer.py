@@ -2,7 +2,7 @@ import pytest
 import os
 import time
 from unittest.mock import AsyncMock, patch, MagicMock
-from backend.memory_store import MemoryStore
+from services.memory.store.service import MemoryStore
 
 @pytest.fixture
 def mock_redis():
@@ -29,7 +29,7 @@ def mock_redis():
 
 @pytest.fixture
 def store(mock_redis):
-    with patch("backend.memory_store.get_redis", return_value=mock_redis):
+    with patch("services.memory.store.service.get_redis", return_value=mock_redis):
         return MemoryStore()
 
 @pytest.mark.asyncio

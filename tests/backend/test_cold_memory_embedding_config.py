@@ -1,4 +1,4 @@
-from backend.cold_memory import ColdMemoryRetriever
+from services.memory.cold import ColdMemoryRetriever
 
 
 def test_cold_memory_retriever_uses_configured_embedding_model():

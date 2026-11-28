@@ -3,7 +3,7 @@ import asyncio
 from unittest.mock import AsyncMock
 
 # We will mock the batch processor function that would normally be called by the debounce worker
-from backend.gum_integration import ObservationQueueWorker
+from services.memory.gum.runtime import ObservationQueueWorker
 
 @pytest.fixture
 def mock_processor():

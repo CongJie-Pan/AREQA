@@ -2,8 +2,8 @@ import pytest
 import asyncio
 from unittest.mock import AsyncMock, patch
 
-from backend.memory_store import MemoryStore
-from backend.gum_integration import ObservationQueueWorker
+from services.memory.store.service import MemoryStore
+from services.memory.gum.runtime import ObservationQueueWorker
 from backend.services.hot_memory_service import (
     HotMemoryKind,
     attach_typed_entry,
@@ -79,11 +79,11 @@ async def test_compaction_retains_user_evidence_when_candidate_persistence_fails
         category="passive_preference",
     )
 
-    with patch("memory_store.get_global_store", return_value=store), patch(
+    with patch("services.memory.store.service.get_global_store", return_value=store), patch(
         "services.memory_ingestion_service.create_memory_ingestion_service",
         return_value=ingestion,
     ):
-        from backend.gum_integration import run_compaction
+        from services.memory.gum.runtime import run_compaction
 
         await run_compaction("user-1")
 

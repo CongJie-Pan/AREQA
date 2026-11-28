@@ -4,7 +4,7 @@ import json
 from unittest.mock import patch, MagicMock, AsyncMock
 from datetime import datetime
 
-from backend.gum_integration import (
+from services.memory.gum.runtime import (
     batch_process_observations,
     get_gum_instance,
     stop_gum_instance,
@@ -13,7 +13,7 @@ from backend.gum_integration import (
     get_all_memory,
     TextObserver,
 )
-import backend.gum_integration
+import services.memory.gum.runtime
 
 # STITCH imports
 import pytest_asyncio
@@ -59,11 +59,11 @@ def mock_gum_instance():
 
 @pytest.mark.asyncio
 async def test_get_and_stop_gum_instance():
-    backend.gum_integration.gum_instances.clear()
-    backend.gum_integration.text_observers.clear()
-    backend.gum_integration.obs_worker = None
+    services.memory.gum.runtime.gum_instances.clear()
+    services.memory.gum.runtime.text_observers.clear()
+    services.memory.gum.runtime.obs_worker = None
 
-    with patch("backend.gum_integration.gum") as mock_gum:
+    with patch("services.memory.gum.runtime.gum") as mock_gum:
         mock_instance = MagicMock()
         mock_instance.connect_db = AsyncMock()
         mock_instance.stop_update_loop = AsyncMock()
@@ -87,12 +87,12 @@ async def test_get_and_stop_gum_instance():
 
 @pytest.mark.asyncio
 async def test_get_gum_instance_uses_database_url_when_configured():
-    backend.gum_integration.gum_instances.clear()
-    backend.gum_integration.text_observers.clear()
-    backend.gum_integration.obs_worker = None
+    services.memory.gum.runtime.gum_instances.clear()
+    services.memory.gum.runtime.text_observers.clear()
+    services.memory.gum.runtime.obs_worker = None
 
     with patch.dict("os.environ", {"DATABASE_URL": "postgresql://user:pass@example.com:5432/postgres"}), \
-         patch("backend.gum_integration.gum") as mock_gum:
+         patch("services.memory.gum.runtime.gum") as mock_gum:
         mock_instance = MagicMock()
         mock_instance.connect_db = AsyncMock()
         mock_instance.stop_update_loop = AsyncMock()
@@ -114,11 +114,11 @@ async def test_push_observation():
     mock_gum.query = AsyncMock(return_value=[])
     mock_obs = AsyncMock()
 
-    with patch("backend.gum_integration.get_gum_instance", new_callable=AsyncMock) as mock_get_gum, \
-         patch("backend.gum_integration.run_compaction", new_callable=AsyncMock), \
-         patch("backend.gum_integration.run_reflection", new_callable=AsyncMock):
+    with patch("services.memory.gum.runtime.get_gum_instance", new_callable=AsyncMock) as mock_get_gum, \
+         patch("services.memory.gum.runtime.run_compaction", new_callable=AsyncMock), \
+         patch("services.memory.gum.runtime.run_reflection", new_callable=AsyncMock):
         mock_get_gum.return_value = (mock_gum, mock_obs)
-        backend.gum_integration.obs_worker = None
+        services.memory.gum.runtime.obs_worker = None
 
         await push_observation("test_user", "test observation text")
 
@@ -130,9 +130,9 @@ async def test_push_reflection_observation_uses_non_working_memory_path():
     mock_gum = MagicMock()
     mock_obs = AsyncMock()
 
-    with patch("backend.gum_integration.get_gum_instance", new_callable=AsyncMock) as mock_get_gum,          patch("backend.gum_integration.batch_process_observations", new_callable=AsyncMock) as mock_batch:
+    with patch("services.memory.gum.runtime.get_gum_instance", new_callable=AsyncMock) as mock_get_gum,          patch("services.memory.gum.runtime.batch_process_observations", new_callable=AsyncMock) as mock_batch:
         mock_get_gum.return_value = (mock_gum, mock_obs)
-        backend.gum_integration.obs_worker = None
+        services.memory.gum.runtime.obs_worker = None
 
         await push_reflection_observation("test_user", "reflection text")
 
@@ -158,13 +158,13 @@ async def test_batch_process_observations_skips_working_memory_sync_when_disable
     mock_gum.query = AsyncMock(return_value=[])
     mock_obs = AsyncMock()
 
-    with patch("backend.gum_integration.get_gum_instance", new_callable=AsyncMock) as mock_get_gum, \
-         patch("backend.gum_integration.run_compaction", new_callable=AsyncMock), \
-         patch("backend.gum_integration.run_reflection", new_callable=AsyncMock), \
-         patch("memory_store.get_global_store", return_value=fake_store), \
-         patch("memory_gate.classify_learning_observation", return_value=FakeGate()):
+    with patch("services.memory.gum.runtime.get_gum_instance", new_callable=AsyncMock) as mock_get_gum, \
+         patch("services.memory.gum.runtime.run_compaction", new_callable=AsyncMock), \
+         patch("services.memory.gum.runtime.run_reflection", new_callable=AsyncMock), \
+         patch("services.memory.store.service.get_global_store", return_value=fake_store), \
+         patch("services.memory.gate.classify_learning_observation", return_value=FakeGate()):
         mock_get_gum.return_value = (mock_gum, mock_obs)
-        backend.gum_integration.obs_worker = None
+        services.memory.gum.runtime.obs_worker = None
 
         await batch_process_observations(
             "test_user",
@@ -176,7 +176,7 @@ async def test_batch_process_observations_skips_working_memory_sync_when_disable
 
 @pytest.mark.asyncio
 async def test_get_all_memory_with_stitch_tags(mock_gum_instance):
-    with patch("backend.gum_integration.get_gum_instance", new_callable=AsyncMock) as mock_get_gum:
+    with patch("services.memory.gum.runtime.get_gum_instance", new_callable=AsyncMock) as mock_get_gum:
         mock_get_gum.return_value = (mock_gum_instance, AsyncMock())
         memories = await get_all_memory("test_user")
     
@@ -207,10 +207,10 @@ async def test_user_scoped_gum_reads_forward_user_id():
     mock_gum.recent = AsyncMock(return_value=[])
     mock_gum.query = AsyncMock(return_value=[])
 
-    with patch("backend.gum_integration.get_gum_instance", new_callable=AsyncMock) as mock_get_gum:
+    with patch("services.memory.gum.runtime.get_gum_instance", new_callable=AsyncMock) as mock_get_gum:
         mock_get_gum.return_value = (mock_gum, AsyncMock())
         await get_all_memory("user-a")
-        await backend.gum_integration.query_memory_for_context(
+        await services.memory.gum.runtime.query_memory_for_context(
             "判詞", user_id="user-a"
         )
 
@@ -234,11 +234,11 @@ async def test_push_observation_with_evolution():
     mock_gum.update_status = AsyncMock()
     
     mock_text_observer = AsyncMock()
-    with patch("backend.gum_integration.get_gum_instance", new_callable=AsyncMock) as mock_get_gum, \
-         patch("backend.gum_integration.run_compaction", new_callable=AsyncMock), \
-         patch("backend.gum_integration.run_reflection", new_callable=AsyncMock):
+    with patch("services.memory.gum.runtime.get_gum_instance", new_callable=AsyncMock) as mock_get_gum, \
+         patch("services.memory.gum.runtime.run_compaction", new_callable=AsyncMock), \
+         patch("services.memory.gum.runtime.run_reflection", new_callable=AsyncMock):
         mock_get_gum.return_value = (mock_gum, mock_text_observer)
-        backend.gum_integration.obs_worker = None
+        services.memory.gum.runtime.obs_worker = None
 
         await push_observation("test_user", "User loves apples now")
 
@@ -268,11 +268,11 @@ async def test_push_observation_with_evolution_no_prune():
     mock_gum.update_status = AsyncMock()
     
     mock_text_observer = AsyncMock()
-    with patch("backend.gum_integration.get_gum_instance", new_callable=AsyncMock) as mock_get_gum, \
-         patch("backend.gum_integration.run_compaction", new_callable=AsyncMock), \
-         patch("backend.gum_integration.run_reflection", new_callable=AsyncMock):
+    with patch("services.memory.gum.runtime.get_gum_instance", new_callable=AsyncMock) as mock_get_gum, \
+         patch("services.memory.gum.runtime.run_compaction", new_callable=AsyncMock), \
+         patch("services.memory.gum.runtime.run_reflection", new_callable=AsyncMock):
         mock_get_gum.return_value = (mock_gum, mock_text_observer)
-        backend.gum_integration.obs_worker = None
+        services.memory.gum.runtime.obs_worker = None
 
         await push_observation("test_user", "User asks about the weather")
 
@@ -287,7 +287,7 @@ async def test_push_observation_with_evolution_no_prune():
 
 @pytest.mark.asyncio
 async def test_get_all_memory(mock_gum_instance):
-    with patch("backend.gum_integration.get_gum_instance", new_callable=AsyncMock) as mock_get_gum:
+    with patch("services.memory.gum.runtime.get_gum_instance", new_callable=AsyncMock) as mock_get_gum:
         mock_get_gum.return_value = (mock_gum_instance, AsyncMock())
         memory = await get_all_memory("test_user")
     
@@ -300,7 +300,7 @@ async def test_get_all_memory(mock_gum_instance):
     
 @pytest.mark.asyncio
 async def test_get_all_memory_no_instance():
-    with patch("backend.gum_integration.get_gum_instance", new_callable=AsyncMock) as mock_get_gum:
+    with patch("services.memory.gum.runtime.get_gum_instance", new_callable=AsyncMock) as mock_get_gum:
         mock_get_gum.return_value = (None, None)
         memory = await get_all_memory("test_user")
     assert memory == []
@@ -324,11 +324,11 @@ async def test_run_compaction_skips_unavailable_direct_cold_write_path():
         def __init__(self, *args, **kwargs):
             pass
 
-    with patch("memory_store.get_global_store", return_value=FakeStore()), \
-         patch("backend.gum_integration.get_gum_instance", new_callable=AsyncMock) as mock_get_gum, \
-         patch("cold_memory.ColdMemoryRetriever", FakeColdRetriever):
+    with patch("services.memory.store.service.get_global_store", return_value=FakeStore()), \
+         patch("services.memory.gum.runtime.get_gum_instance", new_callable=AsyncMock) as mock_get_gum, \
+         patch("services.memory.cold.ColdMemoryRetriever", FakeColdRetriever):
         mock_get_gum.return_value = (MagicMock(), None)
-        await backend.gum_integration.run_compaction("test_user")
+        await services.memory.gum.runtime.run_compaction("test_user")
 
 # --- STITCH Contextual Intent Filtering Integration Tests ---
 

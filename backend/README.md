@@ -29,6 +29,9 @@ backend/
     orchestration/        Composition root and conversation execution stages
     realtime/             Voice/provider session and speech services
     memory/
+      cold.py             Cold-memory retrieval (PostgreSQL + pgvector)
+      scoring.py          Activation decay, STITCH tags and learner-state scoring
+      gate.py             Memory eligibility gate
       ingestion/          Trusted evidence lifecycle
       store/              Redis memory persistence
       gum/                GUM lifecycle, workers and memory workflows
@@ -38,14 +41,14 @@ backend/
     ...                   Existing attachment, ComPeer and visual domains
 ```
 
-Legacy files such as `gum_integration.py`, `memory_store.py` and selected flat
-`services/_compat/*_service.py` modules contain compatibility imports only. The actual state and
-implementation live in domain packages. Keep these aliases until downstream
-imports and test patch paths no longer need them.
+Memory code lives only under `services/memory/`; import and patch it by its
+canonical path (for example `services.memory.store.service`). The former flat
+modules (`memory_store.py`, `gum_integration.py`, `memory_gate.py`,
+`cold_memory.py`, `compaction.py`) were removed. Selected flat
+`services/_compat/*_service.py` modules still contain compatibility imports only.
 
 This organization does not relocate independent infrastructure such as the job
-store, mailbox store or cold-memory retriever. Move those only with a separate
-review of their consumers and storage contracts.
+store. Move it only with a separate review of its consumers and storage contracts.
 
 ## Reorganization validation
 

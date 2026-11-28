@@ -2,7 +2,7 @@ import pytest
 import asyncio
 from unittest.mock import patch, AsyncMock, MagicMock
 from datetime import datetime
-import backend.gum_integration
+import services.memory.gum.runtime
 
 @pytest.fixture
 def mock_gum_instance():
@@ -24,13 +24,13 @@ def mock_gum_instance():
     return instance
 
 @pytest.mark.asyncio
-@patch("backend.gum_integration.get_gum_instance", new_callable=AsyncMock)
+@patch("services.memory.gum.runtime.get_gum_instance", new_callable=AsyncMock)
 async def test_reflection_compression(mock_get_gum, mock_gum_instance):
     text_observer = AsyncMock()
     mock_get_gum.return_value = (mock_gum_instance, text_observer)
     
     # We will invoke the background task's inner logic directly
-    await backend.gum_integration.run_reflection(user_id="test_user")
+    await services.memory.gum.runtime.run_reflection(user_id="test_user")
     
     # Verify recent observations were fetched
     mock_gum_instance.recent_observations.assert_called_once()

@@ -140,7 +140,7 @@ async def test_worker_handles_memory_compaction():
     store.complete = AsyncMock()
     
     with patch("backend.job_store.get_agent_job_store", return_value=store), \
-         patch("gum_integration.run_compaction", new_callable=AsyncMock) as mock_run_compaction:
+         patch("services.memory.gum.runtime.run_compaction", new_callable=AsyncMock) as mock_run_compaction:
         
         try:
             await agent_job_worker()

@@ -486,7 +486,7 @@ async def edit_memory_endpoint(mem_id: str, req: EditMemoryRequest, current_user
 
             # Update cold memory search indexes (FTS & Vector)
             try:
-                from cold_memory import ColdMemoryRetriever
+                from services.memory.cold import ColdMemoryRetriever
                 import os
                 from pathlib import Path
                 db_path = str(Path(__file__).resolve().parent.parent / "data" / "gum_data" / "gum.db")
@@ -495,7 +495,7 @@ async def edit_memory_endpoint(mem_id: str, req: EditMemoryRequest, current_user
                     cold_retriever = ColdMemoryRetriever(db_path, api_key)
                     embed = await cold_retriever.get_embedding(req.text)
                     if embed:
-                        from cold_memory import get_engine
+                        from services.memory.cold import get_engine
                         from sqlalchemy import text
                         from sqlalchemy.ext.asyncio import AsyncSession
                         engine = get_engine()

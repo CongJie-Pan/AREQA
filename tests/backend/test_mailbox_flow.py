@@ -24,7 +24,7 @@ def mock_store():
         
     store.get_hot_memory = AsyncMock(side_effect=get_hot_memory_mock)
     
-    with patch("memory_store.get_global_store", return_value=store):
+    with patch("services.memory.store.service.get_global_store", return_value=store):
         yield store
 
 @pytest.mark.asyncio
@@ -34,9 +34,9 @@ async def test_mailbox_flow(mock_store):
     
     with patch("config.settings.enable_mailbox_sending", True), \
          patch("backend.services.compeer_scheduler.asyncio.sleep", side_effect=asyncio.CancelledError) as mock_sleep, \
-         patch("gum_integration.generate_epistolary_letter_via_llm", new_callable=AsyncMock) as mock_gen_letter, \
-         patch("gum_integration.query_cold_memory_for_context", new_callable=AsyncMock) as mock_query, \
-         patch("gum_integration.get_hot_memory_snapshot", new_callable=AsyncMock) as mock_snapshot, \
+         patch("services.memory.gum.runtime.generate_epistolary_letter_via_llm", new_callable=AsyncMock) as mock_gen_letter, \
+         patch("services.memory.gum.runtime.query_cold_memory_for_context", new_callable=AsyncMock) as mock_query, \
+         patch("services.memory.gum.runtime.get_hot_memory_snapshot", new_callable=AsyncMock) as mock_snapshot, \
          patch("mailbox_store.get_mailbox_store", return_value=mock_mb_store):
         
         mock_gen_letter.return_value = ("標題", "這是一封來自柏拉圖的信")

@@ -1,9 +1,9 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from backend.compaction import evaluate_student_state
-from backend.gum_integration import async_evaluate_and_update_state
-from backend.memory_store import InvalidMemorySource, MemoryStore
+from services.memory.scoring import evaluate_student_state
+from services.memory.gum.runtime import async_evaluate_and_update_state
+from services.memory.store.service import InvalidMemorySource, MemoryStore
 
 
 @pytest.mark.asyncio
@@ -90,8 +90,8 @@ async def test_legacy_edf_memory_operations_are_ignored():
         ],
     }
 
-    with patch("backend.compaction.evaluate_student_state", new=AsyncMock(return_value=state_result)), \
-         patch("memory_store.get_global_store", return_value=store):
+    with patch("services.memory.scoring.evaluate_student_state", new=AsyncMock(return_value=state_result)), \
+         patch("services.memory.store.service.get_global_store", return_value=store):
         await async_evaluate_and_update_state(
             MagicMock(),
             "test-model",
@@ -131,8 +131,8 @@ async def test_edf_cannot_reingest_declarative_preference():
     store.promote_cold_candidate = AsyncMock(return_value=None)
     state_result = {"learner_state": "TINKERING", "pedagogical_strategy": "引導", "trigger_proactive": False}
 
-    with patch("backend.compaction.evaluate_student_state", new=AsyncMock(return_value=state_result)), \
-         patch("memory_store.get_global_store", return_value=store):
+    with patch("services.memory.scoring.evaluate_student_state", new=AsyncMock(return_value=state_result)), \
+         patch("services.memory.store.service.get_global_store", return_value=store):
         await async_evaluate_and_update_state(
             MagicMock(),
             "test-model",
@@ -159,8 +159,8 @@ async def test_sensitive_candidate_never_auto_promotes():
     store.promote_cold_candidate = AsyncMock()
     state_result = {"learner_state": "STARTING", "pedagogical_strategy": "引導", "trigger_proactive": False}
 
-    with patch("backend.compaction.evaluate_student_state", new=AsyncMock(return_value=state_result)), \
-         patch("memory_store.get_global_store", return_value=store):
+    with patch("services.memory.scoring.evaluate_student_state", new=AsyncMock(return_value=state_result)), \
+         patch("services.memory.store.service.get_global_store", return_value=store):
         await async_evaluate_and_update_state(
             MagicMock(),
             "test-model",

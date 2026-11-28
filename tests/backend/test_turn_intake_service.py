@@ -19,7 +19,7 @@ async def test_roleplay_hot_memory_failure_does_not_fail_turn_intake(caplog):
     ingestion = MagicMock()
     ingestion.ingest_user_evidence = AsyncMock(return_value=ingestion_result)
 
-    with patch("memory_store.get_global_store", return_value=store), patch(
+    with patch("services.memory.store.service.get_global_store", return_value=store), patch(
         "services.compeer_scheduler.set_last_interaction_time",
         new_callable=AsyncMock,
     ), patch(

@@ -1,6 +1,6 @@
 import pytest
 import math
-from backend.compaction import calculate_activation_score, is_user_profile
+from services.memory.scoring import calculate_activation_score, is_user_profile
 
 def test_high_decay_short_time():
     # Decay=9 (long lasting), Age=0.1 days, Confidence=8

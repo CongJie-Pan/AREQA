@@ -117,7 +117,7 @@ async def query_cold_memory_for_context(
     import os
     from pathlib import Path
 
-    from cold_memory import ColdMemoryRetriever
+    from services.memory.cold import ColdMemoryRetriever
     from services.memory.store.service import get_global_store
 
     db_path = str(Path(__file__).resolve().parents[3] / "data" / "gum_data" / "gum.db")
@@ -186,7 +186,7 @@ async def async_evaluate_and_update_state(
     intentionally ignored. Exact user evidence enters memory only through
     ``TurnIntakeService`` and ``MemoryIngestionService``.
     """
-    from compaction import evaluate_student_state
+    from services.memory.scoring import evaluate_student_state
     from services.memory.store.service import get_global_store
 
     state_res = await evaluate_student_state(client, model, chat_history)

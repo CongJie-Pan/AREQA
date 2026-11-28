@@ -2,7 +2,7 @@
 
 The mixin owns candidate creation, evidence append, promotion, temporary-goal
 completion, and rejection while preserving exact Redis key names and method
-contracts from ``memory_store.py``. Structured logs use safe user ids,
+contracts from ``services.memory.store.service``. Structured logs use safe user ids,
 candidate ids, categories, counts, and reason codes only.
 """
 

@@ -1,7 +1,7 @@
 import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from backend.cold_memory import ColdMemoryRetriever
+from services.memory.cold import ColdMemoryRetriever
 from backend.services.memory_retrieval_trace import MemoryRetrievalTrace
 
 @pytest.mark.asyncio
@@ -41,9 +41,9 @@ async def test_cold_memory_search_pg():
     
     mock_engine = MagicMock()
     
-    with patch("backend.cold_memory.get_engine", return_value=mock_engine), \
-         patch("backend.cold_memory.AsyncSession") as MockAsyncSession, \
-         patch("backend.cold_memory.httpx.AsyncClient"):
+    with patch("services.memory.cold.get_engine", return_value=mock_engine), \
+         patch("services.memory.cold.AsyncSession") as MockAsyncSession, \
+         patch("services.memory.cold.httpx.AsyncClient"):
         
         MockAsyncSession.return_value.__aenter__.return_value = mock_async_session_instance
         
@@ -65,7 +65,7 @@ async def test_cold_memory_search_pg():
 
 @pytest.mark.asyncio
 async def test_cold_memory_embedding_timeout_returns_no_memory(monkeypatch):
-    import backend.cold_memory as cold_memory
+    import services.memory.cold as cold_memory
 
     monkeypatch.setattr(cold_memory.settings, "cold_memory_embedding_timeout_ms", 1)
     monkeypatch.setattr(
@@ -82,7 +82,7 @@ async def test_cold_memory_embedding_timeout_returns_no_memory(monkeypatch):
     retriever.get_embedding = slow_embedding
     trace = MemoryRetrievalTrace(route_reason="SUBSTANTIVE_QUERY")
 
-    with patch("backend.cold_memory.get_engine", return_value=MagicMock()):
+    with patch("services.memory.cold.get_engine", return_value=MagicMock()):
         results = await retriever.search(
             "test query",
             user_id="user_123",

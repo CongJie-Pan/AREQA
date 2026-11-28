@@ -24,7 +24,7 @@ from unittest.mock import MagicMock, AsyncMock, patch
 
 @pytest.fixture
 def memory_store():
-    from backend.memory_store import MemoryStore
+    from services.memory.store.service import MemoryStore
     from unittest.mock import AsyncMock, patch, MagicMock
     redis = AsyncMock()
     _store = {}
@@ -45,7 +45,7 @@ def memory_store():
         async def __aexit__(self, exc_type, exc_val, exc_tb): pass
     redis.pipeline = PipelineContext
     redis._store = _store
-    with patch("backend.memory_store.get_redis", return_value=redis):
+    with patch("services.memory.store.service.get_redis", return_value=redis):
         yield MemoryStore()
 
 class TestGetHotMemorySnapshot:
@@ -57,8 +57,8 @@ class TestGetHotMemorySnapshot:
     @pytest.mark.asyncio
     async def test_snapshot_returns_empty_when_no_store(self):
         """When no global store is initialized, snapshot must return ''."""
-        import backend.gum_integration as gi
-        with patch("memory_store.get_global_store", return_value=None):
+        import services.memory.gum.runtime as gi
+        with patch("services.memory.store.service.get_global_store", return_value=None):
             result = await gi.get_hot_memory_snapshot("default_user")
         assert result == ""
 
@@ -67,8 +67,8 @@ class TestGetHotMemorySnapshot:
         """Snapshot must include user profile section when profile has data."""
         await memory_store.update_user_profile("default_user", "school", "國立臺灣大學中文系三年級")
 
-        import backend.gum_integration as gi
-        with patch("memory_store.get_global_store", return_value=memory_store):
+        import services.memory.gum.runtime as gi
+        with patch("services.memory.store.service.get_global_store", return_value=memory_store):
             result = await gi.get_hot_memory_snapshot("default_user")
 
         assert "使用者畫像" in result
@@ -79,8 +79,8 @@ class TestGetHotMemorySnapshot:
         """Snapshot must include prompt-safe working memory items."""
         await memory_store.append_learning_observation("default_user", "林黛玉的老師是賈雨村", confidence=9)
 
-        import backend.gum_integration as gi
-        with patch("memory_store.get_global_store", return_value=memory_store):
+        import services.memory.gum.runtime as gi
+        with patch("services.memory.store.service.get_global_store", return_value=memory_store):
             result = await gi.get_hot_memory_snapshot("default_user")
 
         assert "工作記憶" in result
@@ -91,8 +91,8 @@ class TestGetHotMemorySnapshot:
         """Arbitrary hot-memory strings must not leak into prompt-visible working memory."""
         await memory_store.update_hot_memory("default_user", "怡紅院住戶", "賈寶玉")
 
-        import backend.gum_integration as gi
-        with patch("memory_store.get_global_store", return_value=memory_store):
+        import services.memory.gum.runtime as gi
+        with patch("services.memory.store.service.get_global_store", return_value=memory_store):
             result = await gi.get_hot_memory_snapshot("default_user")
 
         assert "賈寶玉" not in result
@@ -103,8 +103,8 @@ class TestGetHotMemorySnapshot:
         await memory_store.update_working_memory("default_user", {"current_focus": "雪雁"})
         await memory_store.update_working_memory("default_user", {"current_focus": "紫鵑"})
 
-        import backend.gum_integration as gi
-        with patch("memory_store.get_global_store", return_value=memory_store):
+        import services.memory.gum.runtime as gi
+        with patch("services.memory.store.service.get_global_store", return_value=memory_store):
             result = await gi.get_hot_memory_snapshot("default_user")
 
         assert "紫鵑" in result
@@ -123,8 +123,8 @@ class TestGetHotMemorySnapshot:
             },
         )
 
-        import backend.gum_integration as gi
-        with patch("memory_store.get_global_store", return_value=memory_store):
+        import services.memory.gum.runtime as gi
+        with patch("services.memory.store.service.get_global_store", return_value=memory_store):
             result = await gi.get_hot_memory_snapshot(
                 "default_user",
                 conversation_id="conv-greeting",
@@ -152,8 +152,8 @@ class TestGetHotMemorySnapshot:
             },
         )
 
-        import backend.gum_integration as gi
-        with patch("memory_store.get_global_store", return_value=memory_store):
+        import services.memory.gum.runtime as gi
+        with patch("services.memory.store.service.get_global_store", return_value=memory_store):
             result = await gi.get_hot_memory_snapshot(
                 "default_user",
                 conversation_id="conv-react",
@@ -177,8 +177,8 @@ class TestGetHotMemorySnapshot:
             },
         )
 
-        import backend.gum_integration as gi
-        with patch("memory_store.get_global_store", return_value=memory_store):
+        import services.memory.gum.runtime as gi
+        with patch("services.memory.store.service.get_global_store", return_value=memory_store):
             result = await gi.get_hot_memory_snapshot(
                 "default_user",
                 conversation_id="conv-health",
@@ -202,8 +202,8 @@ class TestGetHotMemorySnapshot:
             },
         )
 
-        import backend.gum_integration as gi
-        with patch("memory_store.get_global_store", return_value=memory_store):
+        import services.memory.gum.runtime as gi
+        with patch("services.memory.store.service.get_global_store", return_value=memory_store):
             result = await gi.get_hot_memory_snapshot(
                 "default_user",
                 conversation_id="conv-health",
@@ -219,8 +219,8 @@ class TestGetHotMemorySnapshot:
         await memory_store.append_behavior_signal("default_user", "scroll", {"duration_seconds": 3.0})
         await memory_store.update_hot_memory("default_user", "obs_legacy_scroll", "[User Action] Type: scroll, Context: {}")
 
-        import backend.gum_integration as gi
-        with patch("memory_store.get_global_store", return_value=memory_store):
+        import services.memory.gum.runtime as gi
+        with patch("services.memory.store.service.get_global_store", return_value=memory_store):
             result = await gi.get_hot_memory_snapshot("default_user")
 
         assert "scroll" not in result
@@ -235,8 +235,8 @@ class TestGetHotMemorySnapshot:
             trigger_proactive=True,
         )
 
-        import backend.gum_integration as gi
-        with patch("memory_store.get_global_store", return_value=memory_store):
+        import services.memory.gum.runtime as gi
+        with patch("services.memory.store.service.get_global_store", return_value=memory_store):
             result = await gi.get_hot_memory_snapshot("default_user")
 
         assert "MASTERY" not in result
@@ -412,7 +412,7 @@ class TestQueryColdMemoryForContext:
         """Without OPENROUTER_API_KEY, must return '' (graceful no-op)."""
         monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
-        from backend.gum_integration import query_cold_memory_for_context
+        from services.memory.gum.runtime import query_cold_memory_for_context
         result = await query_cold_memory_for_context("default_user", "王熙鳳的判詞是什麼？")
         assert result == ""
 
@@ -425,11 +425,11 @@ class TestQueryColdMemoryForContext:
             {"text": "王熙鳳的判詞是：凡鳥偏從末世來，都知愛慕此生才。", "score": 0.95},
         ]
 
-        import backend.gum_integration as gi
+        import services.memory.gum.runtime as gi
         gi.gum_instance = MagicMock()
-        with patch("cold_memory.ColdMemoryRetriever") as MockCRM, \
-               patch("memory_store.get_global_store", return_value=None), \
-             patch("backend.gum_integration.generate_zpd_query_via_llm", new_callable=AsyncMock, return_value="王熙鳳的判詞是什麼？"):
+        with patch("services.memory.cold.ColdMemoryRetriever") as MockCRM, \
+               patch("services.memory.store.service.get_global_store", return_value=None), \
+             patch("services.memory.gum.runtime.generate_zpd_query_via_llm", new_callable=AsyncMock, return_value="王熙鳳的判詞是什麼？"):
             mock_instance = MockCRM.return_value
             mock_instance.search = AsyncMock(return_value=mock_results)
             result = await gi.query_cold_memory_for_context("default_user", "王熙鳳的判詞是什麼？", top_k=3)
@@ -444,11 +444,11 @@ class TestQueryColdMemoryForContext:
         """Returns empty string when no search results found."""
         monkeypatch.setenv("OPENROUTER_API_KEY", "test-key-dummy")
 
-        import backend.gum_integration as gi
+        import services.memory.gum.runtime as gi
         gi.gum_instance = MagicMock()
-        with patch("cold_memory.ColdMemoryRetriever") as MockCRM, \
-               patch("memory_store.get_global_store", return_value=None), \
-             patch("backend.gum_integration.generate_zpd_query_via_llm", new_callable=AsyncMock, return_value="林黛玉"):
+        with patch("services.memory.cold.ColdMemoryRetriever") as MockCRM, \
+               patch("services.memory.store.service.get_global_store", return_value=None), \
+             patch("services.memory.gum.runtime.generate_zpd_query_via_llm", new_callable=AsyncMock, return_value="林黛玉"):
             mock_instance = MockCRM.return_value
             mock_instance.search = AsyncMock(return_value=[])
             result = await gi.query_cold_memory_for_context("default_user", "林黛玉是誰", top_k=3)
@@ -461,11 +461,11 @@ class TestQueryColdMemoryForContext:
         """If ColdMemoryRetriever throws an exception, system degrades gracefully."""
         monkeypatch.setenv("OPENROUTER_API_KEY", "test-key-dummy")
 
-        import backend.gum_integration as gi
+        import services.memory.gum.runtime as gi
         gi.gum_instance = MagicMock()
-        with patch("cold_memory.ColdMemoryRetriever") as MockCRM, \
-               patch("memory_store.get_global_store", return_value=None), \
-             patch("backend.gum_integration.generate_zpd_query_via_llm", new_callable=AsyncMock, return_value="Error query"):
+        with patch("services.memory.cold.ColdMemoryRetriever") as MockCRM, \
+               patch("services.memory.store.service.get_global_store", return_value=None), \
+             patch("services.memory.gum.runtime.generate_zpd_query_via_llm", new_callable=AsyncMock, return_value="Error query"):
             mock_instance = MockCRM.return_value
             mock_instance.search = AsyncMock(side_effect=Exception("Database locked"))
             result = await gi.query_cold_memory_for_context("default_user", "引發錯誤的查詢")
@@ -479,7 +479,7 @@ class TestColdMemoryTransactionIsolation:
     async def test_vector_failure_does_not_abort_bm25_search(self, monkeypatch):
         monkeypatch.setenv("OPENROUTER_API_KEY", "test-key-dummy")
 
-        import backend.cold_memory as cm
+        import services.memory.cold as cm
 
         class FakeCursor:
             def __init__(self, rows):
@@ -553,21 +553,21 @@ class TestIsUserProfileGating:
 
     def test_user_profile_prefix_returns_true(self):
         """Keys starting with 'user_profile' must be identified as profile entries."""
-        from backend.compaction import is_user_profile
+        from services.memory.scoring import is_user_profile
         assert is_user_profile("user_profile") is True
         assert is_user_profile("user_profile_name") is True
         assert is_user_profile("user_profile_school") is True
 
     def test_hot_memory_keys_return_false(self):
         """Regular hot memory keys must NOT be misidentified as profile entries."""
-        from backend.compaction import is_user_profile
+        from services.memory.scoring import is_user_profile
         assert is_user_profile("林黛玉的老師") is False
         assert is_user_profile("王熙鳳的判詞") is False
         assert is_user_profile("寶玉的住所") is False
 
     def test_edge_case_profile_substring_not_at_start(self):
         """Key with 'user_profile' not at start must return False (prefix-only check)."""
-        from backend.compaction import is_user_profile
+        from services.memory.scoring import is_user_profile
         assert is_user_profile("some_user_profile") is False
 
     def test_profile_key_exempt_from_decay_integration(self):
@@ -575,7 +575,7 @@ class TestIsUserProfileGating:
         Integration-level: even a very old low-decay user_profile key has score ~0,
         but is_user_profile() correctly gates it from the demotion logic.
         """
-        from backend.compaction import is_user_profile, calculate_activation_score
+        from services.memory.scoring import is_user_profile, calculate_activation_score
 
         # A very old, low-decay item would normally be demoted
         score = calculate_activation_score(confidence=5.0, decay=1.0, age_days=365.0)
