@@ -91,3 +91,12 @@ def test_review_truncates_long_answers():
     text = render_review([_review(answer="x" * 1000)], answer_chars=10)
 
     assert "> xxxxxxxxxx…" in text
+
+
+def test_served_side_is_reported_and_old_records_count_as_gemini():
+    jev_served = dict(_record(), served="jev")
+
+    summary = summarize([_record(), jev_served], min_samples=1)
+
+    assert summary["served"] == {"gemini": 1, "jev": 1}
+    assert "Served by: {'gemini': 1, 'jev': 1}" in render_markdown(summary, until="2026-12-12", today=date(2026, 12, 1))

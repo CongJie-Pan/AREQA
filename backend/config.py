@@ -51,8 +51,9 @@ class Settings(BaseSettings):
     # The EDF classifier takes about 1.0-1.3 s; a 700 ms budget discarded every
     # PRACTICE/HINT decision and silently served the default LEARN policy.
     policy_classifier_timeout_ms: int = 1500
-    # "gemini" (chat classifier), "jev" (Decisions API), or "shadow": serve Gemini
-    # and log Jev's labels beside it. Unknown values behave as "gemini".
+    # "gemini" (chat classifier), "jev" (Decisions API), "shadow" (serve Gemini,
+    # compare Jev) or "jev_shadow" (serve Jev, compare Gemini). Unknown values
+    # behave as "gemini".
     policy_classifier_backend: str = "gemini"
     # Last Asia/Taipei date (inclusive, YYYY-MM-DD) that shadow mode runs; empty means no end.
     policy_shadow_until: str = ""

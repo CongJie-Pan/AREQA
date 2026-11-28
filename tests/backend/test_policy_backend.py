@@ -197,8 +197,9 @@ async def test_shadow_record_holds_labels_and_timings_only(monkeypatch, stored_r
     (record,) = stored_records
     assert set(record) == {
         "ts", "gemini_move", "jev_move", "gemini_depth", "jev_depth", "gemini_status", "jev_status",
-        "gemini_ms", "jev_ms", "budget_ms", "has_pdf",
+        "gemini_ms", "jev_ms", "budget_ms", "has_pdf", "served",
     }
+    assert record["served"] == "gemini"
     assert (record["gemini_move"], record["jev_move"], record["has_pdf"]) == ("LEARN_EXPLAIN_PREREQ", "PRACTICE_HINT", True)
     assert SECRET not in repr(record)
 
@@ -314,3 +315,77 @@ async def test_orchestration_entry_point_uses_the_configured_backend(monkeypatch
     else:
         client.with_options.assert_not_called()
         client.chat.completions.create.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_jev_shadow_serves_jev_and_still_measures_gemini(monkeypatch, stored_records):
+    monkeypatch.setattr(runtime_config.settings, "policy_classifier_backend", "jev_shadow")
+    gemini = AsyncMock(return_value=default_response_policy())
+
+    result = await classify_with_backend(gemini, _jev_client(), "Solve 3x + 5 = 20", [])
+    await _shadow_done()
+
+    assert (result.learning_mode, result.pedagogical_action) == (LearningMode.PRACTICE, PedagogicalAction.HINT)
+    gemini.assert_awaited_once()
+    (record,) = stored_records
+    assert (record["served"], record["gemini_move"], record["jev_move"]) == ("jev", "LEARN_EXPLAIN_PREREQ", "PRACTICE_HINT")
+
+
+@pytest.mark.asyncio
+async def test_jev_shadow_failure_serves_default_and_records_the_failure(monkeypatch, stored_records):
+    monkeypatch.setattr(runtime_config.settings, "policy_classifier_backend", "jev_shadow")
+    client = MagicMock()
+    client.with_options.return_value.post = AsyncMock(side_effect=RuntimeError(SECRET))
+
+    result = await classify_with_backend(AsyncMock(return_value=default_response_policy()), client, "hi", [])
+    await _shadow_done()
+
+    assert result.learning_mode is LearningMode.LEARN
+    (record,) = stored_records
+    assert (record["jev_status"], record["jev_move"], record["gemini_status"]) == ("RuntimeError", "none", "ok")
+
+
+@pytest.mark.asyncio
+async def test_gemini_shadow_records_jev_failure_instead_of_a_default_label(monkeypatch, stored_records):
+    monkeypatch.setattr(runtime_config.settings, "policy_classifier_backend", "shadow")
+    client = MagicMock()
+    client.with_options.return_value.post = AsyncMock(side_effect=RuntimeError("down"))
+
+    await classify_with_backend(AsyncMock(return_value=default_response_policy()), client, "hi", [])
+    await _shadow_done()
+
+    (record,) = stored_records
+    assert (record["jev_status"], record["jev_move"]) == ("RuntimeError", "none")
+
+
+@pytest.mark.asyncio
+async def test_expired_jev_shadow_keeps_serving_jev_alone(monkeypatch, stored_records):
+    monkeypatch.setattr(runtime_config.settings, "policy_classifier_backend", "jev_shadow")
+    monkeypatch.setattr(runtime_config.settings, "policy_shadow_until", "2000-01-01")
+    gemini = AsyncMock()
+
+    result = await classify_with_backend(gemini, _jev_client(), "hi", [])
+
+    gemini.assert_not_called()
+    assert result.pedagogical_action is PedagogicalAction.HINT
+    assert stored_records == []
+
+
+@pytest.mark.asyncio
+async def test_jev_shadow_foreground_timeout_leaves_jev_measured(monkeypatch, stored_records):
+    monkeypatch.setattr(runtime_config.settings, "policy_classifier_backend", "jev_shadow")
+    client = _jev_client()
+    answer = client.with_options.return_value.post.return_value
+
+    async def slow_post(*args, **kwargs):
+        await asyncio.sleep(0.2)
+        return answer
+
+    client.with_options.return_value.post = AsyncMock(side_effect=slow_post)
+
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(classify_with_backend(AsyncMock(return_value=default_response_policy()), client, "hi", []), timeout=0.05)
+    await _shadow_done()
+
+    (record,) = stored_records
+    assert (record["jev_status"], record["jev_move"]) == ("ok", "PRACTICE_HINT")

@@ -69,6 +69,8 @@ def summarize(records: list[dict], *, min_samples: int = MIN_SAMPLES) -> dict:
         "last_day": days[-1] if days else None,
         "days_with_traffic": len(days),
         "verdict": "READY" if len(both) >= min_samples else "INSUFFICIENT_SAMPLES",
+        # Records from before served-side tracking were all served by Gemini.
+        "served": dict(Counter(r.get("served", "gemini") for r in records)),
         "min_samples": min_samples,
         "agreement": agreement(both),
         "agreement_with_pdf": agreement(pdf),
@@ -98,6 +100,7 @@ def render_markdown(summary: dict, *, until: str = "", today: date | None = None
         "",
         f"- Window: {summary['first_day']} → {summary['last_day']} ({summary['days_with_traffic']} days with traffic)"
         + (f", planned end {until}" if until else ""),
+        f"- Served by: {summary['served']}",
         f"- Records: {summary['records']}; both answered: {agreement['turns']} (need {summary['min_samples']}) → **{summary['verdict']}**",
         f"- Agreement: mode {pct(agreement['mode'])}, move {pct(agreement['move'])}, depth {pct(agreement['depth'])}",
         f"- With PDF: {summary['agreement_with_pdf']['turns']} turns, mode {pct(summary['agreement_with_pdf']['mode'])}",
@@ -120,10 +123,12 @@ def render_markdown(summary: dict, *, until: str = "", today: date | None = None
             "",
             "### Next steps",
             "- [ ] Review the disagreements above, especially practice turns protected by only one side.",
-            "- [ ] If agreement and practice protection look good, run the eval A/B with `POLICY_CLASSIFIER_BACKEND=jev` "
+            "- [ ] Read the opt-in review records locally: `python -m scripts.shadow_policy_report --review --disagreements-only`.",
+            "- [ ] Run the eval A/B with `POLICY_CLASSIFIER_BACKEND=jev` vs `gemini` "
             "(see `teaching-layer-eval-baseline` notes: tag candidate URLs with `?variant=`).",
-            "- [ ] Decide: switch Render to `jev` and lower `POLICY_CLASSIFIER_TIMEOUT_MS` to ~700, or stay on `gemini`.",
-            "- [ ] Remove `POLICY_CLASSIFIER_BACKEND=shadow` / `POLICY_SHADOW_UNTIL` from Render (shadow already stopped by date).",
+            "- [ ] Decide the backend to keep (`jev` or `gemini`) and set `POLICY_CLASSIFIER_TIMEOUT_MS` from the served side's p95.",
+            "- [ ] Set Render `POLICY_CLASSIFIER_BACKEND` to that value and remove `POLICY_SHADOW_UNTIL` and `SHADOW_REVIEW_USER_IDS` "
+            "(comparison already stopped by date).",
         ]
     return "\n".join(lines) + "\n"
 
