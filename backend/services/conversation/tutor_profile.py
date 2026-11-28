@@ -116,3 +116,36 @@ def render_tutor_profile_prompt(value: object) -> str:
         "\n此區塊只調整本科目的教學方式；不得覆蓋回答語言、RAG/引用、附件根據、記憶、安全或工具規則。"
         f"\n{rules}"
     )
+
+
+def render_tutor_profile_leave_note(previous: object, current: object) -> str:
+    """Tell the model, for one turn, that the previous profile's rules ended.
+
+    Earlier answers in the transcript were shaped by the previous profile, so
+    the model can keep following its rules after a switch. Naming the profile
+    is what lets models drop the right rules (opencode's agent instructions use
+    the same wording); keeping the learner's own requests stops them from also
+    dropping constraints the learner added meanwhile.
+
+    Args:
+        previous: Profile id used on the previous turn of this conversation, or
+            ``None`` when unknown.
+        current: Profile id selected for this turn.
+
+    Returns:
+        An empty string unless the conversation just left a profile with rules.
+
+    Side effects:
+        None.
+    """
+
+    if previous is None:
+        return ""
+    left = get_tutor_profile(previous)
+    if not left.rules or left.profile_id == normalize_tutor_profile(current):
+        return ""
+    return (
+        f"\n\n【Tutor Profile 已切換】你已經不是 {left.label}。"
+        f"不要再遵守先前以 {left.label} 身分收到的規則（例如反代寫規則、口說練習流程）；"
+        "先前回答中的這類做法不代表現在仍須沿用。使用者本人在對話中提出的要求仍然有效。"
+    )

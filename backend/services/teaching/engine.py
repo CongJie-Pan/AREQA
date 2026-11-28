@@ -21,6 +21,7 @@ from services.conversation import context_instructions
 from services.conversation.language import _answer_language_instruction, _example_instruction
 from services.conversation.parts import PartsContext, format_parts_context
 from services.conversation.research_coach import render_prompt_profile
+from services.conversation.tutor_profile import render_tutor_profile_leave_note
 from services.query_policy.classifier import ResponsePolicy, default_response_policy
 from services.teaching import prompts
 from services.teaching.profiles import capabilities_for
@@ -44,11 +45,14 @@ class TeachingRequest:
         force_think: Whether the reasoning variant of the base prompt is used.
         response_policy: Classified answer strategy; ``None`` uses the default.
         parts_context: Optional PARTS task card for this turn.
+        previous_tutor_profile: Profile this conversation used on its previous
+            turn, or ``None`` when unknown; a switch adds a one-turn leave note.
     """
 
     last_user_msg: str
     interface_language: str = "zh-TW"
     tutor_profile: str = "general"
+    previous_tutor_profile: str | None = None
     grounded: bool = False
     force_think: bool = False
     response_policy: ResponsePolicy | None = None
@@ -118,6 +122,7 @@ def render_system_prompt(request: TeachingRequest, materials: TeachingMaterials 
 
     system_prompt += _answer_language_instruction(request.interface_language, request.last_user_msg)
     capabilities = capabilities_for(request.tutor_profile)
+    system_prompt += render_tutor_profile_leave_note(request.previous_tutor_profile, request.tutor_profile)
     if not capabilities.overlay_last:
         system_prompt += render_prompt_profile(request.tutor_profile)
     system_prompt += _example_instruction(request.interface_language, request.last_user_msg)

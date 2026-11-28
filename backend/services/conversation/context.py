@@ -8,6 +8,7 @@ understanding as unknown.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass
@@ -48,9 +49,19 @@ class ConversationContext:
 class ConversationContextService:
     """Assemble model messages without treating inference as verified mastery."""
 
-    def __init__(self, memory_policy: Any, memory_query_tool: Any):
+    def __init__(self, memory_policy: Any, memory_query_tool: Any,
+                 profile_history: Callable[[str, str, str], Awaitable[str | None]] | None = None):
+        """
+        Args:
+            memory_policy: Long-term memory eligibility policy.
+            memory_query_tool: Recall boundary for long-term memory.
+            profile_history: Optional ``(user_id, conversation_id, profile)`` swap
+                that returns the previous turn's profile; ``None`` disables
+                profile-transition notes.
+        """
         self.memory_policy = memory_policy
         self.memory_query_tool = memory_query_tool
+        self.profile_history = profile_history
 
     async def build_conversation_context(
         self,
@@ -220,11 +231,21 @@ class ConversationContextService:
         if capabilities_for(tutor_profile).topic_card:
             topic_card = await load_card_prompt(user_id, conversation_id, last_user_msg=last_user_msg)
 
+        previous_tutor_profile = None
+        if self.profile_history is not None and not isolated_context:
+            try:
+                # Bounded so a slow Redis costs at most this much answer latency.
+                previous_tutor_profile = await asyncio.wait_for(
+                    self.profile_history(user_id, conversation_id, tutor_profile), timeout=0.3)
+            except Exception as exc:
+                logger.warning("tutor_profile.history_skipped reason=%s", type(exc).__name__)
+
         system_prompt = render_system_prompt(
             TeachingRequest(
                 last_user_msg=last_user_msg,
                 interface_language=interface_language,
                 tutor_profile=tutor_profile,
+                previous_tutor_profile=previous_tutor_profile,
                 grounded=grounded,
                 force_think=force_think,
                 response_policy=response_policy,

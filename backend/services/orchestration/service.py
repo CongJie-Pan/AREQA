@@ -89,9 +89,12 @@ class OrchestrationService(
             lambda *args, **kwargs: query_cold_memory_for_context(*args, **kwargs),
             lambda *args, **kwargs: query_memory_for_context(*args, **kwargs),
         )
+        from services.conversation.profile_history import swap_previous_profile
+
         self.context_service = ConversationContextService(
             self.memory_policy,
             self.memory_query_tool,
+            profile_history=swap_previous_profile,
         )
         self.post_turn_service = PostTurnService(suggestion_service)
         self.visual_answer_service = VisualAnswerService()
