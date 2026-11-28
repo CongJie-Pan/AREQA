@@ -28,7 +28,7 @@ def test_settings_loads_defaults():
     assert s.foreground_model_call_budget_general == 2
     assert s.foreground_model_call_budget_learning == 3
     assert s.enable_policy_classifier_for_general_chat is True
-    assert s.policy_classifier_timeout_ms == 700
+    assert s.policy_classifier_timeout_ms == 1500
     assert s.enable_sync_long_term_memory_for_general_chat is False
     assert s.enable_parts_prompt_context is True
     assert s.enable_parts_llm_rewrite is True
