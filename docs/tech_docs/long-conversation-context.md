@@ -27,6 +27,25 @@ Configuration (backend environment, case-insensitive Pydantic settings):
 | `CONVERSATION_SUMMARY_CONTEXT_TOKENS` | 524288 | Independent conservative summary allowance; configure at or below the summary model context |
 | `DATABASE_URL` | unset | Server-only PostgreSQL connection for durable checkpoints |
 | `ENABLE_CONVERSATION_COMPACTION` | true | If false, oversized prompts are rejected rather than sent unbounded |
+| `ENABLE_CONVERSATION_SUMMARY_PRECOMPUTE` | false | Summarize older history in the background as the context nears its budget (see below) |
+| `CONVERSATION_SUMMARY_PRECOMPUTE_RATIO` | 0.75 | Share of the chat budget a prepared context must reach to start a background summary |
+| `CONVERSATION_SUMMARY_PRECOMPUTE_TAIL_SHARE` | 0.5 | Share of the room left after instructions and summary that the verbatim tail may fill |
+| `CONVERSATION_SUMMARY_PRECOMPUTE_WAIT_SECONDS` | 3 | Longest an answer waits for a background summary that is still running |
+
+### Background summaries (precompute)
+
+With precompute on, `prepare_history` changes in two ways. Once a prepared
+context fills `RATIO` of the budget, it starts a background summary of the
+history before the earliest user turn whose tail fits `TAIL_SHARE` of the free
+room; the summary lands in the same memory and database checkpoints as before.
+When a later turn exceeds the budget, it first waits up to `WAIT_SECONDS` for a
+running summary, then prefers the longest matching checkpoint plus everything
+after it verbatim. It calls the summary model on the answer path only when that
+does not fit. Covering further back than the greedy split (hysteresis) lets
+several turns reuse one summary instead of summarizing a one-turn gap before
+every answer. Jobs are per process, one per scope, and stop after two failures;
+edits, forks and retries miss the content-addressed checkpoint and fall back to
+the synchronous path.
 
 Conversation text estimates use serialized UTF-8 bytes plus framing as a
 conservative text proxy, excluding native file/image payloads and server-marked

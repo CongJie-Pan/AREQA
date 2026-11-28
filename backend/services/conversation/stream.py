@@ -12,6 +12,7 @@ from typing import Any, AsyncGenerator, Dict, List
 
 from config import settings
 from services.conversation.history import prepare_history
+from services.conversation.summary_precompute import PrecomputeSettings
 from services.conversation.context_recovery import is_provider_context_error, minimal_retry_context, UnavailableCitationFilter
 from services.conversation.attachment_budget import is_attachment
 from services.conversation.context_budget import ContextBudgetError, token_bound
@@ -166,6 +167,12 @@ class ConversationStreamService:
                     summary_context_tokens=settings.conversation_summary_context_tokens,
                     enabled=settings.enable_conversation_compaction,
                     retrieval_context=retrieval_context,
+                    precompute=PrecomputeSettings(
+                        ratio=settings.conversation_summary_precompute_ratio,
+                        tail_share=settings.conversation_summary_precompute_tail_share,
+                        wait_seconds=settings.conversation_summary_precompute_wait_seconds,
+                        timeout_seconds=settings.conversation_summary_cold_timeout_seconds,
+                    ) if settings.enable_conversation_summary_precompute else None,
                 ))
                 try:
                     done, _ = await asyncio.wait([preparation], timeout=1.0)

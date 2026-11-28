@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     conversation_summary_cold_timeout_seconds: float = 45.0
     conversation_summary_context_tokens: int = 524_288
     enable_conversation_compaction: bool = True
+    # Summarize older history in the background as the context nears its budget,
+    # so long chats stop waiting on a summary call before answering. Off by default.
+    enable_conversation_summary_precompute: bool = False
+    conversation_summary_precompute_ratio: float = 0.75
+    conversation_summary_precompute_tail_share: float = 0.5
+    conversation_summary_precompute_wait_seconds: float = 3.0
 
     # RAG Parameters
     rag_max_docs: int = 7
