@@ -25,6 +25,14 @@ class SSEAdapter:
 
         return f"event: {event.type.value}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
+    def emit(self, event_type: EventType, payload: object, run_id: str) -> str:
+        """Encode a typed event numbered after every event already sent.
+
+        Producers no longer coordinate sequence numbers by hand; typed and
+        legacy frames share this adapter's counter.
+        """
+        return self.encode(AgentEvent(event_type, payload, run_id, self._last_sequence + 1))
+
     def _accept(self, event: AgentEvent) -> None:
         if self._transport_closed:
             raise ValueError("cannot emit an event after the transport is closed")

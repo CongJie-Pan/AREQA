@@ -5,7 +5,7 @@ import json
 import logging
 
 from config import settings
-from core import AgentEvent, EventType, SearchMode
+from core import EventType, SearchMode
 from policies import CapabilityPolicy
 from services.memory.gate import classify_user_message
 from services.orchestration.utils import _localized_greeting_reply
@@ -135,7 +135,7 @@ class OrchestrationExecutionMixin:
         # Send a user-visible event before memory and policy work enters the
         # critical path. This keeps the transport responsive even when an
         # external dependency is slow.
-        yield sse_adapter.encode(AgentEvent(
+        yield sse_adapter.emit(
             EventType.METADATA,
             {
                 "promptTokens": 1024,
@@ -147,20 +147,17 @@ class OrchestrationExecutionMixin:
                 "toolVersion": "registry-v1",
             },
             run_context.run_id,
-            1,
-        ))
-        yield sse_adapter.encode(AgentEvent(
+        )
+        yield sse_adapter.emit(
             EventType.STATUS,
             {"status": "routing", "message": "🔍 正在分析問題"},
             run_context.run_id,
-            2,
-        ))
-        yield sse_adapter.encode(AgentEvent(
+        )
+        yield sse_adapter.emit(
             EventType.STATUS,
             {"status": "routing", "message": "🧭 正在判斷是否需要外部搜尋"},
             run_context.run_id,
-            3,
-        ))
+        )
 
         search_decision, turn_plan, use_rag = await plan_search(
             self, last_user_msg=last_user_msg, run_context=run_context, trace=trace,
@@ -170,7 +167,7 @@ class OrchestrationExecutionMixin:
         use_web_search = search_decision.should_search
         turn_plan_enabled = bool(settings.enable_turn_plan_runtime)
 
-        yield sse_adapter.encode(AgentEvent(
+        yield sse_adapter.emit(
             EventType.ACTION,
             {
                 "phase": "tool_selection",
@@ -180,18 +177,15 @@ class OrchestrationExecutionMixin:
                 "attempt": 1,
             },
             run_context.run_id,
-            4,
-        ))
-        yield sse_adapter.encode(AgentEvent(
+        )
+        yield sse_adapter.emit(
             EventType.STATUS,
             {
                 "status": "routing",
                 "message": "🚦 已判斷回答路徑，正在檢查可用記憶與背景任務",
             },
             run_context.run_id,
-            5,
-        ))
-        # Numbered AgentEvents above own sequences 1-5; legacy frames continue after them.
+        )
         yield sse_adapter.encode_legacy(progress_event("analyzing"), run_context.run_id)
 
         if last_user_msg and not isolated_context:

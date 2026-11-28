@@ -208,3 +208,14 @@ def test_agent_search_routing_is_enabled_by_default():
 
     assert settings.enable_agent_search_routing is True
     assert settings.agent_search_rollout_percentage == 100.0
+
+
+def test_sse_adapter_emit_numbers_events_after_legacy_frames():
+    from core import EventType, SSEAdapter
+
+    adapter = SSEAdapter()
+    adapter.emit(EventType.STATUS, {"status": "routing"}, "run-1")
+    adapter.encode_legacy('data: {"choices": []}\n\n', "run-1")
+    frame = adapter.emit(EventType.STATUS, {"status": "answering"}, "run-1")
+    assert frame == 'event: status\ndata: {"status": "answering"}\n\n'
+    assert adapter._last_sequence == 3

@@ -8,6 +8,8 @@ import re
 import logging
 import time
 import uuid
+from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, AsyncGenerator, Dict, List
 
 from config import settings
@@ -57,12 +59,205 @@ def _usage_counts(usage: Any) -> tuple[Any, Any, Any, Any]:
             read(completion_details, "reasoning_tokens"), read(prompt_details, "cached_tokens"))
 
 
+def _delta_frame(content: str) -> str:
+    return f"data: {json.dumps({'choices': [{'delta': {'content': content}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
+
+
+class StepOutcome(str, Enum):
+    """How one provider step ended; the caller decides what happens next.
+
+    A provider context rejection is not an outcome: it raises, and the caller's
+    bounded retry owns recovery.
+    """
+
+    COMPLETED = "completed"
+    OUTPUT_LIMIT = "output_limit"
+    TOOL_CALLS = "tool_calls"
+
+
+@dataclass
+class _StepState:
+    """What a provider step produced besides answer frames."""
+
+    tool_calls: dict[int, dict[str, str]] = field(default_factory=dict)
+    finish_reason: str | None = None
+    usage: Any = None
+    generation_id: str | None = None
+    # Whether the provider emitted any text or tool call during this attempt.
+    started: bool = False
+
+    @property
+    def outcome(self) -> StepOutcome:
+        if self.tool_calls:
+            return StepOutcome.TOOL_CALLS
+        if self.finish_reason == "length":
+            return StepOutcome.OUTPUT_LIMIT
+        return StepOutcome.COMPLETED
+
+
+class _AnswerPipeline:
+    """Filter provider text into public answer frames and own the accumulated answer."""
+
+    def __init__(self, *, conversation_id: str, max_image_slots: int, trace: Any):
+        self.conversation_id = conversation_id
+        self.trace = trace
+        self.citation_filter: Any = None
+        self.output_filter = PublicAnswerFilter()
+        self.boundary_filter = StreamingResponseBoundaryFilter()
+        self.image_marker_filter = ImageRequestMarkerFilter(max_slots=max_image_slots)
+        self.accumulator = ""
+
+    def _log_blocked(self, reasons: list[str]) -> None:
+        for reason in reasons:
+            logger.warning(
+                "orchestration.response_boundary_blocked conversation_id=%s reason=%s",
+                self.conversation_id,
+                reason,
+            )
+
+    def _slot_frames(self) -> list[str]:
+        return [f"event: image_slot\ndata: {json.dumps(slot.to_stream_payload(), ensure_ascii=False)}\n\n"
+                for slot in self.image_marker_filter.drain_new_slots()]
+
+    def feed(self, content: str) -> list[str]:
+        """Return the frames one provider text delta produces."""
+        frames: list[str] = []
+        if self.citation_filter:
+            content = self.citation_filter.feed(content)
+        if content:
+            content = self.output_filter.feed(content)
+        if content:
+            content, reasons = self.boundary_filter.feed(content)
+            self._log_blocked(reasons)
+        if content:
+            content = self.image_marker_filter.feed(content)
+        if content:
+            if self.trace:
+                self.trace.mark_once("first_answer_delta")
+            self.accumulator += content
+            frames.append(_delta_frame(content))
+        frames.extend(self._slot_frames())
+        return frames
+
+    def finish(self) -> list[str]:
+        """Flush every filter once the provider stream has ended."""
+        frames: list[str] = []
+        trailing = (self.output_filter.feed(self.citation_filter.finish()) if self.citation_filter else '') + self.output_filter.finish()
+        if trailing:
+            safe_trailing, reasons = self.boundary_filter.feed(trailing)
+            self._log_blocked(reasons)
+            if safe_trailing:
+                safe_trailing = self.image_marker_filter.feed(safe_trailing)
+            if safe_trailing:
+                self.accumulator += safe_trailing
+                frames.append(_delta_frame(safe_trailing))
+            frames.extend(self._slot_frames())
+        final_text, final_reasons = self.boundary_filter.finish()
+        self._log_blocked(final_reasons)
+        if final_text:
+            final_text = self.image_marker_filter.feed(final_text)
+        marker_trailing = self.image_marker_filter.finish()
+        if marker_trailing:
+            final_text = f"{final_text}{marker_trailing}"
+        if final_text:
+            self.accumulator += final_text
+            frames.append(_delta_frame(final_text))
+        frames.extend(self._slot_frames())
+        return frames
+
+
 class ConversationStreamService:
     """Stream provider output while enforcing filtering and tool boundaries."""
 
     def __init__(self, client: Any, tool_registry: Any):
         self.client = client
         self.tool_registry = tool_registry
+
+    async def _run_provider_step(
+        self, *, messages: List[Dict[str, Any]], state: _StepState, pipeline: _AnswerPipeline,
+        request: Any, trace: Any, conversation_id: str, target_model: str, max_tokens: int,
+        temperature: float, top_p: float, extra_body: Dict[str, Any], tools: list[dict[str, Any]],
+        attempt: int, attachment_count: int,
+    ) -> AsyncGenerator[str, None]:
+        """Run one provider request and yield its answer frames.
+
+        Text goes through ``pipeline``; tool calls, finish reason and usage land
+        in ``state``, whose ``outcome`` the caller reads once the step ends. A
+        provider rejection propagates unchanged so the caller decides on a retry.
+        The request and stream are always closed, including on ``aclose()``.
+        """
+        generation = None
+        response = None
+        try:
+            logger.info(
+                'orchestration.provider_request_started conversation_id=%s model=%s attempt=%d '
+                'message_count=%d attachment_count=%d chat_bytes=%d output_tokens=%d',
+                conversation_id, target_model, attempt + 1, len(messages),
+                attachment_count, token_bound(messages), max_tokens,
+            )
+            if attachment_count:
+                log_memory_snapshot("attachment_provider_request_started", conversation_id=conversation_id)
+            generation = asyncio.create_task(
+                self.client.chat.completions.create(
+                    model=target_model,
+                    messages=messages,
+                    stream=True,
+                    max_tokens=max_tokens,
+                    temperature=temperature if temperature > 0 else 0.001,
+                    top_p=top_p,
+                    extra_body=extra_body,
+                    tools=tools,
+                    tool_choice="auto",
+                )
+            )
+            while not generation.done():
+                done, _ = await asyncio.wait([generation], timeout=5.0)
+                if not done:
+                    yield ": heartbeat\n\n"
+            response = await generation
+            if attachment_count:
+                log_memory_snapshot("attachment_provider_stream_received", conversation_id=conversation_id)
+            logger.info('orchestration.provider_stream_received conversation_id=%s model=%s attempt=%d',
+                        conversation_id, target_model, attempt + 1)
+            if trace:
+                trace.mark_once("main_model_provider_stream_received")
+            async for chunk in response:
+                if await request.is_disconnected():
+                    logger.info("orchestration.stream_cancelled conversation_id=%s", conversation_id)
+                    break
+                state.usage = getattr(chunk, "usage", None) or state.usage
+                # Opaque OpenRouter id; lets /api/v1/generation explain provider latency.
+                state.generation_id = getattr(chunk, "id", None) or state.generation_id
+                if not chunk.choices:
+                    continue
+                state.finish_reason = getattr(chunk.choices[0], "finish_reason", None) or state.finish_reason
+                delta = chunk.choices[0].delta
+                if getattr(delta, "tool_calls", None):
+                    state.started = True
+                    for call in delta.tool_calls:
+                        entry = state.tool_calls.setdefault(getattr(call, "index", 0), {"name": "", "arguments": "", "id": getattr(call, "id", None) or uuid.uuid4().hex})
+                        function = getattr(call, "function", None)
+                        if function:
+                            entry["name"] += getattr(function, "name", None) or ""
+                            entry["arguments"] += getattr(function, "arguments", None) or ""
+                    continue
+                content = getattr(delta, "content", None) or ""
+                if content:
+                    state.started = True
+                for frame in pipeline.feed(content):
+                    yield frame
+                await asyncio.sleep(0)
+        finally:
+            if generation is not None and not generation.done():
+                generation.cancel()
+                await asyncio.gather(generation, return_exceptions=True)
+            if response is not None:
+                close = getattr(response, 'close', None) or getattr(response, 'aclose', None)
+                if close is not None:
+                    try:
+                        await close()
+                    except Exception as close_error:
+                        logger.warning('orchestration.provider_close_failed error_type=%s', type(close_error).__name__)
 
     async def stream(
         self,
@@ -134,22 +329,17 @@ class ConversationStreamService:
             tool_budget = ToolBudgetTracker(ToolBudget())
 
         original_messages = messages
-        citation_filter = None
-        accumulator = ""
-        image_marker_filter = ImageRequestMarkerFilter(max_slots=max_image_slots)
-        output_filter = PublicAnswerFilter()
-        boundary_filter = StreamingResponseBoundaryFilter()
-        tool_calls: dict[int, dict[str, str]] = {}
+        pipeline = _AnswerPipeline(conversation_id=conversation_id, max_image_slots=max_image_slots, trace=trace)
+        # Shared across the context-retry attempts, as the retry only follows a
+        # rejection that arrived before any provider output.
+        step_state = _StepState()
         generated_blocks: list[dict] = []
-        finish_reason: str | None = None
-        provider_usage: Any = None
-        generation_id: str | None = None
         logger.info(
             "orchestration.stream_started conversation_id=%s model=%s attachment_parser=%s image_slot_cap=%s openrouter_session=%s latency_routing=%s",
             conversation_id,
             target_model,
             has_pdf,
-            image_marker_filter.max_slots,
+            pipeline.image_marker_filter.max_slots,
             bool(extra_body.get("session_id")),
             bool(extra_body.get("provider")),
         )
@@ -234,98 +424,27 @@ class ConversationStreamService:
                         conversation_id, layout.document_parts, layout.prefix_hash, stable_prefix,
                     )
             if prepared.notice:
-                citation_filter = UnavailableCitationFilter()
+                pipeline.citation_filter = UnavailableCitationFilter()
                 yield f"data: {json.dumps({'choices': [{'delta': {'content': prepared.notice + chr(10) + chr(10)}, 'index': 0}]}, ensure_ascii=False)}\n\n"
             if trace:
                 trace.increment_model_call("main_answer")
                 trace.mark_once("main_model_started")
                 trace.mark_once("main_model_provider_request_started")
             for attempt in range(2):
-                provider_started = False
-                generation = None
-                response = None
+                step_state.started = False
+                # Count parts only; never serialize media or provider errors into logs.
+                attachment_count = sum(
+                    is_attachment(part) for message in messages
+                    if isinstance(message.get('content'), list) for part in message['content'])
+                step = self._run_provider_step(
+                    messages=messages, state=step_state, pipeline=pipeline, request=request, trace=trace,
+                    conversation_id=conversation_id, target_model=target_model, max_tokens=max_tokens,
+                    temperature=temperature, top_p=top_p, extra_body=extra_body, tools=tools,
+                    attempt=attempt, attachment_count=attachment_count,
+                )
                 try:
-                    # Count parts only; never serialize media or provider errors into logs.
-                    attachment_count = sum(
-                        is_attachment(part) for message in messages
-                        if isinstance(message.get('content'), list) for part in message['content'])
-                    logger.info(
-                        'orchestration.provider_request_started conversation_id=%s model=%s attempt=%d '
-                        'message_count=%d attachment_count=%d chat_bytes=%d output_tokens=%d',
-                        conversation_id, target_model, attempt + 1, len(messages),
-                        attachment_count, token_bound(messages), max_tokens,
-                    )
-                    if attachment_count:
-                        log_memory_snapshot("attachment_provider_request_started", conversation_id=conversation_id)
-                    generation = asyncio.create_task(
-                        self.client.chat.completions.create(
-                            model=target_model,
-                            messages=messages,
-                            stream=True,
-                            max_tokens=max_tokens,
-                            temperature=temperature if temperature > 0 else 0.001,
-                            top_p=top_p,
-                            extra_body=extra_body,
-                            tools=tools,
-                            tool_choice="auto",
-                        )
-                    )
-                    while not generation.done():
-                        done, _ = await asyncio.wait([generation], timeout=5.0)
-                        if not done:
-                            yield ": heartbeat\n\n"
-                    response = await generation
-                    if attachment_count:
-                        log_memory_snapshot("attachment_provider_stream_received", conversation_id=conversation_id)
-                    logger.info('orchestration.provider_stream_received conversation_id=%s model=%s attempt=%d',
-                                conversation_id, target_model, attempt + 1)
-                    if trace:
-                        trace.mark_once("main_model_provider_stream_received")
-                    async for chunk in response:
-                        if await request.is_disconnected():
-                            logger.info("orchestration.stream_cancelled conversation_id=%s", conversation_id)
-                            break
-                        provider_usage = getattr(chunk, "usage", None) or provider_usage
-                        # Opaque OpenRouter id; lets /api/v1/generation explain provider latency.
-                        generation_id = getattr(chunk, "id", None) or generation_id
-                        if not chunk.choices:
-                            continue
-                        finish_reason = getattr(chunk.choices[0], "finish_reason", None) or finish_reason
-                        delta = chunk.choices[0].delta
-                        if getattr(delta, "tool_calls", None):
-                            provider_started = True
-                            for call in delta.tool_calls:
-                                entry = tool_calls.setdefault(getattr(call, "index", 0), {"name": "", "arguments": "", "id": getattr(call, "id", None) or uuid.uuid4().hex})
-                                function = getattr(call, "function", None)
-                                if function:
-                                    entry["name"] += getattr(function, "name", None) or ""
-                                    entry["arguments"] += getattr(function, "arguments", None) or ""
-                            continue
-                        content = getattr(delta, "content", None) or ""
-                        if content:
-                            provider_started = True
-                        if citation_filter:
-                            content = citation_filter.feed(content)
-                        if content:
-                            content = output_filter.feed(content)
-                        if content:
-                            content, reasons = boundary_filter.feed(content)
-                            for reason in reasons:
-                                logger.warning(
-                                    "orchestration.response_boundary_blocked conversation_id=%s reason=%s",
-                                    conversation_id,
-                                    reason,
-                                )
-                        if content:
-                            content = image_marker_filter.feed(content)
-                        if content:
-                            if trace:
-                                trace.mark_once("first_answer_delta")
-                            accumulator += content
-                            yield f"data: {json.dumps({'choices': [{'delta': {'content': content}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
-                        for slot in image_marker_filter.drain_new_slots():
-                            yield f"event: image_slot\ndata: {json.dumps(slot.to_stream_payload(), ensure_ascii=False)}\n\n"
-                        await asyncio.sleep(0)
+                    async for frame in step:
+                        yield frame
                     break
                 except Exception as provider_error:
                     if not is_provider_context_error(provider_error):
@@ -333,16 +452,16 @@ class ConversationStreamService:
                     logger.warning(
                         'history.provider_context_rejected conversation_id=%s model=%s attempt=%d '
                         'attachment_count=%d answer_started=%s',
-                        conversation_id, target_model, attempt + 1, attachment_count, provider_started,
+                        conversation_id, target_model, attempt + 1, attachment_count, step_state.started,
                     )
                     # Retry from the pre-layout messages; the reducer understands that shape.
                     reduced, removed_sources = minimal_retry_context(retry_base, original_messages, retrieval_context)
                     reduced, _ = cache_layout(reduced) if getattr(
                         settings, "chat_upload_prompt_cache", True) else (reduced, None)
-                    if attempt == 0 and not provider_started and reduced != messages:
+                    if attempt == 0 and not step_state.started and reduced != messages:
                         messages = reduced
                         if removed_sources:
-                            citation_filter = UnavailableCitationFilter()
+                            pipeline.citation_filter = UnavailableCitationFilter()
                         logger.warning('history.provider_context_retry conversation_id=%s attempt=1 selected_messages=%d removed_sources=%s', conversation_id, len(messages), removed_sources)
                         if trace:
                             trace.increment_model_call("main_answer")
@@ -354,16 +473,9 @@ class ConversationStreamService:
                     has_attachment = any(isinstance(m.get('content'), list) and any(is_attachment(p) for p in m['content']) for m in messages)
                     raise ContextBudgetError('provider_attachment_context_too_large' if has_attachment else 'provider_context_too_large') from None
                 finally:
-                    if generation is not None and not generation.done():
-                        generation.cancel()
-                        await asyncio.gather(generation, return_exceptions=True)
-                    if response is not None:
-                        close = getattr(response, 'close', None) or getattr(response, 'aclose', None)
-                        if close is not None:
-                            try:
-                                await close()
-                            except Exception as close_error:
-                                logger.warning('orchestration.provider_close_failed error_type=%s', type(close_error).__name__)
+                    # A disconnect closes only this generator; close the step explicitly
+                    # so its provider request and stream never outlive the client.
+                    await step.aclose()
 
         except Exception as exc:
             if isinstance(exc, MemoryError):
@@ -387,39 +499,11 @@ class ConversationStreamService:
                                  else "模型仍無法容納本次必要上下文，請精簡問題後重試。")
             yield f"data: {json.dumps({'choices': [{'delta': {'content': error_message}, 'index': 0}]}, ensure_ascii=False)}\n\n"
 
-        trailing = (output_filter.feed(citation_filter.finish()) if citation_filter else '') + output_filter.finish()
-        if trailing:
-            safe_trailing, reasons = boundary_filter.feed(trailing)
-            for reason in reasons:
-                logger.warning(
-                    "orchestration.response_boundary_blocked conversation_id=%s reason=%s",
-                    conversation_id,
-                    reason,
-                )
-            if safe_trailing:
-                safe_trailing = image_marker_filter.feed(safe_trailing)
-            if safe_trailing:
-                accumulator += safe_trailing
-                yield f"data: {json.dumps({'choices': [{'delta': {'content': safe_trailing}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
-            for slot in image_marker_filter.drain_new_slots():
-                yield f"event: image_slot\ndata: {json.dumps(slot.to_stream_payload(), ensure_ascii=False)}\n\n"
-        final_text, final_reasons = boundary_filter.finish()
-        for reason in final_reasons:
-            logger.warning(
-                "orchestration.response_boundary_blocked conversation_id=%s reason=%s",
-                conversation_id,
-                reason,
-            )
-        if final_text:
-            final_text = image_marker_filter.feed(final_text)
-        marker_trailing = image_marker_filter.finish()
-        if marker_trailing:
-            final_text = f"{final_text}{marker_trailing}"
-        if final_text:
-            accumulator += final_text
-            yield f"data: {json.dumps({'choices': [{'delta': {'content': final_text}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
-        for slot in image_marker_filter.drain_new_slots():
-            yield f"event: image_slot\ndata: {json.dumps(slot.to_stream_payload(), ensure_ascii=False)}\n\n"
+        for frame in pipeline.finish():
+            yield frame
+        accumulator = pipeline.accumulator
+        image_marker_filter = pipeline.image_marker_filter
+        outcome = step_state.outcome
         if image_marker_filter.slots:
             logger.info(
                 "visual.slot_marker_detected conversation_id=%s slot_count=%s",
@@ -432,12 +516,12 @@ class ConversationStreamService:
                 conversation_id,
                 image_marker_filter.rejected_verified_marker_count,
             )
-        coverage_notice = coverage_user_notice(original_messages) if not tool_calls else ""
+        coverage_notice = coverage_user_notice(original_messages) if outcome is not StepOutcome.TOOL_CALLS else ""
         if coverage_notice:
             accumulator += coverage_notice
             yield f"data: {json.dumps({'choices': [{'delta': {'content': coverage_notice}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n"
             logger.info("chat_documents.partial_notice conversation_id=%s", conversation_id)
-        if finish_reason == "length" and not tool_calls:
+        if outcome is StepOutcome.OUTPUT_LIMIT:
             # Silent mid-sentence cuts looked like bugs; tell the learner how to resume.
             notice = "\n\n（回答已達單次長度上限而中斷，可以回覆「繼續」讓我接著說。）"
             accumulator += notice
@@ -445,9 +529,10 @@ class ConversationStreamService:
         logger.info(
             "orchestration.provider_finish conversation_id=%s finish_reason=%s prompt_tokens=%s "
             "completion_tokens=%s reasoning_tokens=%s cached_tokens=%s cache_write_tokens=%s generation_id=%s",
-            conversation_id, finish_reason or "none", *_usage_counts(provider_usage),
-            _cache_write_tokens(provider_usage),
-            generation_id if isinstance(generation_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,80}", generation_id) else "none",
+            conversation_id, step_state.finish_reason or "none", *_usage_counts(step_state.usage),
+            _cache_write_tokens(step_state.usage),
+            step_state.generation_id if isinstance(step_state.generation_id, str)
+            and re.fullmatch(r"[A-Za-z0-9_-]{1,80}", step_state.generation_id) else "none",
         )
         logger.info(
             "orchestration.stream_completed conversation_id=%s elapsed_ms=%s",
@@ -457,7 +542,7 @@ class ConversationStreamService:
         if trace:
             trace.mark_once("main_model_finished")
 
-        for call in tool_calls.values():
+        for call in (step_state.tool_calls.values() if outcome is StepOutcome.TOOL_CALLS else ()):
             if call["name"] == "generate_image" and not generated_blocks:
                 try:
                     image_arguments = json.loads(call["arguments"])

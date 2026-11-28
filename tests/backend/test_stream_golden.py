@@ -5,6 +5,7 @@ provider step loop stay behavior-preserving. Regenerate deliberately with:
 
     STREAM_GOLDEN_UPDATE=1 python -m pytest tests/backend/test_stream_golden.py
 """
+import asyncio
 import json
 import os
 import re
@@ -102,3 +103,51 @@ async def test_stream_frames_match_golden(monkeypatch):
     expected = json.loads(GOLDEN.read_text(encoding="utf-8"))
     for name in SCENARIOS:
         assert actual[name] == expected[name], name
+
+
+@pytest.mark.asyncio
+async def test_closing_stream_mid_answer_closes_provider_response(monkeypatch):
+    import services.conversation.stream as module
+    from services.conversation.history import HistoryContext
+
+    async def passthrough(**kwargs):
+        return HistoryContext(kwargs["messages"], "")
+
+    monkeypatch.setattr(module, "prepare_history", passthrough)
+    closed = AsyncMock()
+
+    class Response:
+        """Streams paragraphs until a bounded count, then never finishes."""
+
+        def __init__(self):
+            self.aclose = closed
+            self.sent = 0
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            self.sent += 1
+            if self.sent > 200:
+                await asyncio.Event().wait()
+            return _chunk(f"第 {self.sent} 段回答。\n\n")
+
+    client = MagicMock()
+    client.chat.completions.create = AsyncMock(return_value=Response())
+    stream = ConversationStreamService(client, ToolRegistry()).stream(
+        user_id="u1", conversation_id="conv1", last_user_msg="q", messages=[dict(m) for m in MESSAGES],
+        force_think=False, max_tokens=100, temperature=0.7, top_p=0.9, repetition_penalty=1,
+        request=SimpleNamespace(is_disconnected=AsyncMock(return_value=False)))
+    # The client stops reading after the first answer frame, mid-stream.
+    frame = await asyncio.wait_for(stream.__anext__(), timeout=5)
+    assert frame.startswith("data: ")
+    await stream.aclose()
+    closed.assert_awaited_once()
+
+
+def test_step_outcome_prefers_tool_calls_then_output_limit():
+    from services.conversation.stream import StepOutcome, _StepState
+
+    assert _StepState().outcome is StepOutcome.COMPLETED
+    assert _StepState(finish_reason="length").outcome is StepOutcome.OUTPUT_LIMIT
+    assert _StepState(finish_reason="length", tool_calls={0: {"name": "x"}}).outcome is StepOutcome.TOOL_CALLS
