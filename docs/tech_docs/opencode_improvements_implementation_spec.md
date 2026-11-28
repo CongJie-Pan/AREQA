@@ -13,7 +13,7 @@
 | P0 量測腳本 | 完成 | `dadcd7a` | `scripts/performance/report_turn_latency.py`。範例 log 中沒附件的對話 `cached_tokens` 是 0% |
 | P1-a 摘要保留清單 | 完成 | `84ca68c` | 字數上限維持 450 字，還沒用 live eval 驗證 |
 | P1-b 背景預算 | 完成（flag 預設關閉） | `84ca68c` | 設計改成在 `prepare_history` 內排程，並加上 hysteresis。見 Q1 |
-| P2 stable prefix | 完成（flag 和 rollout 都是 0） | `6069aa2` | 上線前要先用 eval 檢查遵守指示的程度（Q4） |
+| P2 stable prefix | 完成，eval 通過（flag 和 rollout 都是 0） | `6069aa2`、`e36a89d` | Q4 的 eval 已跑（`scripts/evaluate_stable_prefix.py`，gemini-3.8-flash）：遵守指示 B 24/24、A 23/24，沒有任何一項 B 比 A 差。**快取發現**：原本在「最新一輪前一則訊息」加 breakpoint，每輪都會重寫 7.6–8.4K tokens 的快取卻讀不回來，已改成靠 implicit caching，第 2 輪起可讀 ~4.1K tokens、寫入 0。A 版每輪都是 0 |
 | P4 AgentProfile | 完成 | `3ec49d0`、`f2e40cd` | **`services/teaching/profiles.py` 的 `ProfileCapabilities` 已經是 AgentProfile**（這份 spec 寫完前就有了）。所以不另外新增模組，改成加 `topic_card` capability。轉場提示依 Q2 存在 Redis（`profile_history.py`，TTL 7 天，讀取上限 300 ms，失敗時只是少了提示） |
 | P5 Outcome 重構 | 完成 | `ace7e2f`、`4bfd9c0` | 先錄 golden SSE（6 條路徑），重構後輸出完全相同。`_run_provider_step` + `StepOutcome` + `_AnswerPipeline`；`SSEAdapter.emit` 會自動編號 |
 | P6 工具迴圈 | 完成（flag 和 rollout 都是 0） | `2e5600b` | 依 Q3，第 1 步的文字直接串流。搜尋設定和結果格式抽到 `web_search_call.py`，兩條搜尋路徑共用。`memory_query` 還沒開放（照 spec） |
@@ -21,7 +21,7 @@
 **P6 已知限制**：
 - 走模型搜尋的回合，post-turn 拿到的 `use_web_search` 是 False，所以依賴這個值的後續處理不會觸發。
 - 第 1 步如果同時呼叫了生圖和搜尋，生圖會被丟掉。
-- 跟分類器的比較目前只有 log：`orchestration.model_search_decision called=` 對照 shadow routing 的紀錄，還沒有報表。
+- ~~跟分類器的比較只有 log~~：已補上（`6c0e72f`）。走模型搜尋的回合會在背景跑一次分類器（shadow），`scripts/performance/report_model_search.py` 會算出兩者的一致率和 TTFA 對照。recall 目前只是跟分類器比的代理指標；spec 的淘汰條件要的是有標註的查詢集，這部分還沒建。
 
 ---
 
