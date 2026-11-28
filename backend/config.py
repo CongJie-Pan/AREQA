@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     # "gemini" (chat classifier), "jev" (Decisions API), or "shadow": serve Gemini
     # and log Jev's labels beside it. Unknown values behave as "gemini".
     policy_classifier_backend: str = "gemini"
+    # Last Asia/Taipei date (inclusive, YYYY-MM-DD) that shadow mode runs; empty means no end.
+    policy_shadow_until: str = ""
     pdf_intent_classifier_timeout_ms: int = 1500
     enable_sync_long_term_memory_for_general_chat: bool = False
     enable_parts_prompt_context: bool = True

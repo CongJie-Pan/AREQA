@@ -32,6 +32,7 @@ from services.query_policy.teaching_jev import (
 )
 
 SECRET = "PRIVATE_LEARNER_TEXT"
+REAL_STORE = policy_backend._store
 
 
 def _decision(move="PRACTICE_HINT", intent="ANSWER_EXAM", depth="SCAFFOLDED", visual="NONE", evidence="NONE", technique="NONE"):
@@ -170,6 +171,95 @@ async def test_jev_backend_fails_soft_to_the_default_policy(monkeypatch, caplog)
 
 async def _shadow_done():
     await asyncio.gather(*list(policy_backend._shadow_tasks))
+
+
+@pytest.fixture(autouse=True)
+def stored_records(monkeypatch):
+    """Keep shadow tests off the real Redis; collect what would be stored."""
+
+    records = []
+
+    async def store(record):
+        records.append(record)
+
+    monkeypatch.setattr(policy_backend, "_store", store)
+    monkeypatch.setattr(runtime_config.settings, "policy_shadow_until", "")
+    return records
+
+
+@pytest.mark.asyncio
+async def test_shadow_record_holds_labels_and_timings_only(monkeypatch, stored_records):
+    monkeypatch.setattr(runtime_config.settings, "policy_classifier_backend", "shadow")
+
+    await classify_with_backend(AsyncMock(return_value=default_response_policy()), _jev_client(), SECRET, [], has_pdf_attachment=True)
+    await _shadow_done()
+
+    (record,) = stored_records
+    assert set(record) == {
+        "ts", "gemini_move", "jev_move", "gemini_depth", "jev_depth", "gemini_status", "jev_status",
+        "gemini_ms", "jev_ms", "budget_ms", "has_pdf",
+    }
+    assert (record["gemini_move"], record["jev_move"], record["has_pdf"]) == ("LEARN_EXPLAIN_PREREQ", "PRACTICE_HINT", True)
+    assert SECRET not in repr(record)
+
+
+@pytest.mark.asyncio
+async def test_store_appends_to_a_capped_expiring_list(monkeypatch):
+    import redis_client
+
+    pipeline = MagicMock()
+    pipeline.execute = AsyncMock(return_value=[1, True, True])
+    monkeypatch.setattr(redis_client, "get_redis", lambda: MagicMock(pipeline=MagicMock(return_value=pipeline)))
+
+    await REAL_STORE({"ts": 1})
+
+    pipeline.lpush.assert_called_once_with(policy_backend.SHADOW_KEY, '{"ts": 1}')
+    pipeline.ltrim.assert_called_once_with(policy_backend.SHADOW_KEY, 0, policy_backend.SHADOW_MAX_RECORDS - 1)
+    pipeline.expire.assert_called_once_with(policy_backend.SHADOW_KEY, policy_backend.SHADOW_TTL_SECONDS)
+
+
+@pytest.mark.asyncio
+async def test_store_failure_is_logged_without_raising(monkeypatch, caplog):
+    import redis_client
+
+    monkeypatch.setattr(redis_client, "get_redis", MagicMock(side_effect=ConnectionError("down")))
+
+    with caplog.at_level(logging.WARNING, logger=policy_backend.__name__):
+        await REAL_STORE({"ts": 1})
+
+    assert "policy.shadow_store_failed reason=ConnectionError" in caplog.text
+
+
+@pytest.mark.parametrize(("until", "today", "active"), [
+    ("", "2030-01-01", True),
+    ("2026-12-12", "2026-12-12", True),
+    ("2026-12-12", "2026-12-13", False),
+    ("not-a-date", "2026-11-28", False),
+])
+def test_shadow_runs_through_its_end_date(monkeypatch, until, today, active):
+    from datetime import date
+
+    monkeypatch.setattr(runtime_config.settings, "policy_classifier_backend", "shadow")
+    monkeypatch.setattr(runtime_config.settings, "policy_shadow_until", until)
+
+    assert policy_backend.shadow_active(date.fromisoformat(today)) is active
+
+
+@pytest.mark.asyncio
+async def test_expired_shadow_serves_gemini_without_calling_jev(monkeypatch, stored_records, caplog):
+    monkeypatch.setattr(runtime_config.settings, "policy_classifier_backend", "shadow")
+    monkeypatch.setattr(runtime_config.settings, "policy_shadow_until", "2000-01-01")
+    monkeypatch.setattr(policy_backend, "_expiry_logged", False)
+    client = _jev_client()
+    served = default_response_policy()
+
+    with caplog.at_level(logging.INFO, logger=policy_backend.__name__):
+        result = await classify_with_backend(AsyncMock(return_value=served), client, "hi", [])
+
+    assert result is served
+    client.with_options.assert_not_called()
+    assert stored_records == []
+    assert "policy.shadow_expired until=2000-01-01 serving=gemini" in caplog.text
 
 
 @pytest.mark.asyncio
