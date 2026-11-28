@@ -24,6 +24,8 @@ class ProfileCapabilities:
         response_policy_overlay: Whether the per-turn response strategy is rendered.
         overlay_last: Render the profile overlay after every other block, so later
             style overlays cannot outweigh it.
+        topic_card: Load the learner's topic card into the prompt, refresh it after
+            answers, and open greetings with the coach's question.
     """
 
     auto_web_search: bool = True
@@ -32,6 +34,7 @@ class ProfileCapabilities:
     max_answer_tokens: int | None = None
     response_policy_overlay: bool = True
     overlay_last: bool = False
+    topic_card: bool = False
 
 
 _DEFAULT = ProfileCapabilities()
@@ -45,6 +48,7 @@ _CAPABILITIES: dict[str, ProfileCapabilities] = {
         max_answer_tokens=TOPIC_FINDER_MAX_TOKENS,
         response_policy_overlay=False,
         overlay_last=True,
+        topic_card=True,
     ),
 }
 

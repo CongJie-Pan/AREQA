@@ -27,7 +27,7 @@ from services.memory.gate import (
     requests_recent_working_context_recall,
 )
 from services.query_policy.classifier import ResponsePolicy
-from services.conversation.research_coach import is_research_coach
+from services.teaching.profiles import capabilities_for
 from services.conversation.topic_card import load_card_prompt
 from services.teaching.engine import TeachingMaterials, TeachingRequest, render_system_prompt
 
@@ -217,7 +217,7 @@ class ConversationContextService:
             )
 
         topic_card = ""
-        if is_research_coach(tutor_profile):
+        if capabilities_for(tutor_profile).topic_card:
             topic_card = await load_card_prompt(user_id, conversation_id, last_user_msg=last_user_msg)
 
         system_prompt = render_system_prompt(

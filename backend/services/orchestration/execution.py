@@ -33,7 +33,6 @@ from services.orchestration.progress import ProgressRelay, count_learner_documen
 from services.orchestration.completion import complete_answer
 from services.orchestration.response_policy import resolve_response_policy
 from services.orchestration.routing import plan_search
-from services.conversation.research_coach import is_research_coach
 from services.teaching.profiles import capabilities_for
 from services.query_policy import shadow_review
 from services.query_policy.teaching_jev import previous_turn
@@ -220,7 +219,7 @@ class OrchestrationExecutionMixin:
         # must not short-circuit the model's access to request-scoped material.
         if last_user_msg and not has_attachments and not classify_user_message(last_user_msg).should_prompt:
             greeting_reply = _localized_greeting_reply(
-                interface_language, last_user_msg, topic_finder=is_research_coach(tutor_profile))
+                interface_language, last_user_msg, topic_finder=capabilities_for(tutor_profile).topic_card)
             yield sse_adapter.encode_legacy(
                 f"data: {json.dumps({'choices': [{'delta': {'content': greeting_reply}, 'index': 0, 'finish_reason': None}]}, ensure_ascii=False)}\n\n",
                 run_context.run_id,
@@ -466,7 +465,7 @@ class OrchestrationExecutionMixin:
             context_results_obj=context_results_obj, use_rag=use_rag, use_web_search=use_web_search,
             interface_language=interface_language, session=session, trace=trace,
             **({"isolated_context": True} if isolated_context else {}),
-            **({"topic_finder": True} if is_research_coach(tutor_profile) else {}),
+            **({"topic_finder": True} if capabilities_for(tutor_profile).topic_card else {}),
         ):
             yield event
 

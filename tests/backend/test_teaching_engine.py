@@ -191,3 +191,4 @@ def test_topic_finder_capabilities_restrict_search_images_and_length():
     assert not capabilities.response_policy_overlay
     assert capabilities.overlay_last
     assert capabilities.max_answer_tokens == TOPIC_FINDER_MAX_TOKENS
+    assert capabilities.topic_card
