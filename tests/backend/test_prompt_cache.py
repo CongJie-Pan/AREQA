@@ -15,8 +15,8 @@ from services.conversation.attachment_budget import (
     AttachmentPart, CoverageNotePart, DocumentPart, is_attachment,
 )
 from services.conversation.prompt_cache import (
-    DOCUMENT_BOUNDARY_TEXT, STABLE_SYSTEM_PROMPT, TURN_TAG,
-    apply_document_cache_layout, coverage_user_notice,
+    DOCUMENT_BOUNDARY_TEXT, STABLE_CHAT_SYSTEM_PROMPT, STABLE_SYSTEM_PROMPT, TURN_TAG,
+    apply_document_cache_layout, apply_stable_prefix_layout, coverage_user_notice,
 )
 from services.conversation.stream import ConversationStreamService
 
@@ -154,6 +154,60 @@ async def test_stream_sends_cache_layout_and_logs_safe_hash(passthrough_history,
     assert "orchestration.prompt_cache_layout conversation_id=chat document_parts=2 prefix_hash=" in caplog.text
     assert "secret policy text" not in caplog.text
     assert create.call_args.kwargs["extra_body"]["plugins"][0]["id"] == "file-parser"
+
+
+def chat_turn(system: str, history: list[dict], question: str) -> list[dict]:
+    return [{"role": "system", "content": system}, *history, {"role": "user", "content": question}]
+
+
+def test_stable_prefix_keeps_history_identical_across_turns_with_changing_policy():
+    exchange = [{"role": "user", "content": "explain"}, {"role": "assistant", "content": "long answer"}]
+    first, layout_a = apply_stable_prefix_layout(chat_turn("policy A + memory v1", exchange, "next?"))
+    second, layout_b = apply_stable_prefix_layout(chat_turn(
+        "policy B + memory v2", [*exchange, {"role": "user", "content": "next?"},
+                                 {"role": "assistant", "content": "more"}], "and then?"))
+
+    assert first[0] == {"role": "system", "content": STABLE_CHAT_SYSTEM_PROMPT}
+    assert layout_a.document_parts == 0 and layout_a.prefix_hash == layout_b.prefix_hash
+    # The per-turn system text moves into the latest turn only.
+    assert first[-1]["content"][0]["text"] == f"<{TURN_TAG}>\npolicy A + memory v1\n</{TURN_TAG}>"
+    assert first[-1]["content"][1] == {"type": "text", "text": "next?"}
+    assert not any(m["role"] == "system" for m in first[1:])
+    # The earlier conversation is byte-identical apart from the single breakpoint.
+    assert first[1] == second[1] == exchange[0]
+    assert sum("cache_control" in part for m in second if isinstance(m["content"], list)
+               for part in m["content"]) == 1
+    assert second[-2]["content"] == [{"type": "text", "text": "more", "cache_control": {"type": "ephemeral"}}]
+
+
+def test_stable_prefix_defers_to_document_layout_and_skips_promptless_turns():
+    assert apply_stable_prefix_layout(turn("policy", [], "q"))[0][0]["content"] == STABLE_SYSTEM_PROMPT
+    plain = [{"role": "user", "content": "q"}]
+    assert apply_stable_prefix_layout(plain) == (plain, None)
+    first_turn, _ = apply_stable_prefix_layout(chat_turn("policy", [], "q"))
+    assert len(first_turn) == 2  # no earlier message, so no breakpoint
+    assert "cache_control" not in str(first_turn)
+
+
+def test_stable_prefix_layout_does_not_mutate_input():
+    messages = chat_turn("policy", [{"role": "user", "content": "a"}, {"role": "assistant", "content": "b"}], "q")
+    before = json.dumps(messages, sort_keys=True)
+    apply_stable_prefix_layout(messages)
+    assert json.dumps(messages, sort_keys=True) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("percentage, expected_system", [(100, STABLE_CHAT_SYSTEM_PROMPT), (0, "policy")])
+async def test_stable_prefix_rollout_controls_document_free_turns(
+        passthrough_history, monkeypatch, caplog, percentage, expected_system):
+    caplog.set_level(logging.INFO)
+    monkeypatch.setattr(passthrough_history.settings, "enable_stable_system_prefix", True)
+    monkeypatch.setattr(passthrough_history.settings, "stable_system_prefix_rollout_percentage", percentage)
+    service, create = _service(["Answer."])
+    await _run(service, chat_turn("policy", [{"role": "user", "content": "a"},
+                                             {"role": "assistant", "content": "b"}], "q"))
+    assert create.call_args.kwargs["messages"][0]["content"] == expected_system
+    assert ("stable_prefix=True" in caplog.text) == (percentage == 100)
 
 
 @pytest.mark.asyncio

@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     conversation_summary_precompute_ratio: float = 0.75
     conversation_summary_precompute_tail_share: float = 0.5
     conversation_summary_precompute_wait_seconds: float = 3.0
+    # Move per-turn instructions out of the system message for document-free chats
+    # too, so the earlier conversation forms a provider-cacheable prefix. Off by default.
+    enable_stable_system_prefix: bool = False
+    stable_system_prefix_rollout_percentage: float = 0.0
 
     # RAG Parameters
     rag_max_docs: int = 7

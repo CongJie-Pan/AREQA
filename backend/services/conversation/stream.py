@@ -11,6 +11,7 @@ import uuid
 from typing import Any, AsyncGenerator, Dict, List
 
 from config import settings
+from policies import CapabilityPolicy
 from services.conversation.history import prepare_history
 from services.conversation.summary_precompute import PrecomputeSettings
 from services.conversation.context_recovery import is_provider_context_error, minimal_retry_context, UnavailableCitationFilter
@@ -23,7 +24,7 @@ from services.conversation.image_markers import ImageRequestSlot as ImageRequest
 from services.conversation.stream_request import (
     _openrouter_session_id as _openrouter_session_id,
 )
-from services.conversation.prompt_cache import apply_document_cache_layout, coverage_user_notice
+from services.conversation.prompt_cache import apply_document_cache_layout, apply_stable_prefix_layout, coverage_user_notice
 from services.conversation.stream_request import build_stream_request, tools_for_image_slots
 from services.conversation.response_boundary import StreamingResponseBoundaryFilter
 from services.memory_diagnostics import log_memory_snapshot
@@ -217,12 +218,20 @@ class ConversationStreamService:
                 return
             messages = prepared.messages
             retry_base = messages
+            # Document-free turns keep per-turn instructions in the system message
+            # unless the stable-prefix rollout covers this conversation.
+            stable_prefix = CapabilityPolicy.rollout_enabled(
+                feature_enabled=settings.enable_stable_system_prefix,
+                rollout_percentage=settings.stable_system_prefix_rollout_percentage,
+                user_id=user_id, conversation_id=conversation_id,
+            )
+            cache_layout = apply_stable_prefix_layout if stable_prefix else apply_document_cache_layout
             if getattr(settings, "chat_upload_prompt_cache", True):
-                messages, layout = apply_document_cache_layout(messages)
+                messages, layout = cache_layout(messages)
                 if layout:
                     logger.info(
-                        "orchestration.prompt_cache_layout conversation_id=%s document_parts=%d prefix_hash=%s",
-                        conversation_id, layout.document_parts, layout.prefix_hash,
+                        "orchestration.prompt_cache_layout conversation_id=%s document_parts=%d prefix_hash=%s stable_prefix=%s",
+                        conversation_id, layout.document_parts, layout.prefix_hash, stable_prefix,
                     )
             if prepared.notice:
                 citation_filter = UnavailableCitationFilter()
@@ -328,7 +337,7 @@ class ConversationStreamService:
                     )
                     # Retry from the pre-layout messages; the reducer understands that shape.
                     reduced, removed_sources = minimal_retry_context(retry_base, original_messages, retrieval_context)
-                    reduced, _ = apply_document_cache_layout(reduced) if getattr(
+                    reduced, _ = cache_layout(reduced) if getattr(
                         settings, "chat_upload_prompt_cache", True) else (reduced, None)
                     if attempt == 0 and not provider_started and reduced != messages:
                         messages = reduced
