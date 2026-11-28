@@ -140,6 +140,25 @@ async def test_contextual_drawing_spec_is_not_truncated_by_long_source(chat_requ
 
 
 @pytest.mark.asyncio
+async def test_malformed_tool_arguments_keep_streamed_answer_text(chat_request, provider):
+    # Unparseable arguments must not fall back to image_only and erase the answer.
+    async def chunks():
+        yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content='效果量說明', tool_calls=None))])
+        yield SimpleNamespace(choices=[SimpleNamespace(delta=SimpleNamespace(content=None, tool_calls=[
+            SimpleNamespace(index=0, id='bad_call', function=SimpleNamespace(name='generate_image', arguments='{"prompt": '))]))])
+    client = MagicMock()
+    client.chat.completions.create = AsyncMock(return_value=chunks())
+    service = ConversationStreamService(client, ToolRegistry())
+    events = [event async for event in service.stream(user_id='u1', conversation_id='conv1', last_user_msg='產圖',
+        messages=[], force_think=False, max_tokens=100, temperature=0.7, top_p=0.9, repetition_penalty=1, request=chat_request)]
+    final = json.loads(events[-1].split('data: ', 1)[1])
+    assert final['accumulator'] == '效果量說明'
+    assert final['generated_blocks'][0] == {'type': 'paragraph', 'text': '效果量說明'}
+    assert final['generated_blocks'][-1]['status'] == 'error'
+    provider.quota.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize('failure', [False, True])
 async def test_mixed_tool_preserves_analysis_and_sse_identity(chat_request, provider, failure):
     payload = json.dumps({'prompt': '教學圖片', 'presentation': 'text_and_image', 'explanation': '分析結果', 'reference': 'none'})

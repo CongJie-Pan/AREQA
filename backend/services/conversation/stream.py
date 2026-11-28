@@ -446,7 +446,11 @@ class ConversationStreamService:
                 try:
                     image_arguments = json.loads(call["arguments"])
                 except (ValueError, TypeError):
-                    image_arguments = {}
+                    # Unparseable arguments carry no presentation choice; keep the
+                    # streamed answer instead of defaulting to image_only and erasing it.
+                    image_arguments = None
+                    logger.warning("orchestration.tool_arguments_invalid conversation_id=%s tool=generate_image",
+                                   conversation_id)
                 if isinstance(image_arguments, dict) and image_arguments.get("presentation", "image_only") == "image_only":
                     accumulator = ""
                 elif not accumulator and isinstance(image_arguments, dict):
