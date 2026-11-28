@@ -170,3 +170,24 @@ async def test_context_service_passes_gathered_materials_to_engine():
     )
     assert result.messages[0] == {"role": "system", "content": expected}
     assert result.retrieved_memory is True
+
+
+@pytest.mark.parametrize("profile", ["general", "english", "unknown", None, 3])
+def test_ordinary_profiles_keep_default_capabilities(profile):
+    from services.teaching.profiles import ProfileCapabilities, capabilities_for
+
+    assert capabilities_for(profile) == ProfileCapabilities()
+
+
+def test_topic_finder_capabilities_restrict_search_images_and_length():
+    from services.conversation.research_coach import TOPIC_FINDER_MAX_TOKENS
+    from services.teaching.profiles import capabilities_for
+
+    capabilities = capabilities_for("research_coach")
+
+    assert not capabilities.auto_web_search
+    assert not capabilities.image_slots
+    assert not capabilities.paper_auto_explain
+    assert not capabilities.response_policy_overlay
+    assert capabilities.overlay_last
+    assert capabilities.max_answer_tokens == TOPIC_FINDER_MAX_TOKENS

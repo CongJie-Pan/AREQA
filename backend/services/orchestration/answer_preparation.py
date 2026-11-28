@@ -7,7 +7,7 @@ import time
 
 from config import settings
 from services.conversation.projects import apply_project_prompt
-from services.conversation.research_coach import TOPIC_FINDER_MAX_TOKENS, is_research_coach
+from services.teaching.profiles import capabilities_for
 from services.memory_diagnostics import log_memory_snapshot
 from services.query_policy.models import (
     AttachmentTask,
@@ -69,11 +69,11 @@ async def prepare_answer(service, *, user_id, conversation_id, messages, use_rag
                 "orchestration.missing_visual_attachment_guard_applied conversation_id=%s",
                 conversation_id,
             )
-    is_topic_finder = is_research_coach(tutor_profile)
+    capabilities = capabilities_for(tutor_profile)
     # Topic Finder relates uploaded papers to the learner's candidate topic, so the
     # generic paper walkthrough is not forced there.
     should_auto_explain_paper = (
-        not is_topic_finder
+        capabilities.paper_auto_explain
         and settings.enable_pdf_paper_auto_explain
         and getattr(response_policy.attachment_task, "value", response_policy.attachment_task)
         == AttachmentTask.PAPER_AUTO_EXPLAIN.value
@@ -89,8 +89,8 @@ async def prepare_answer(service, *, user_id, conversation_id, messages, use_rag
     )
     if should_auto_explain_paper:
         final_messages = service._add_paper_auto_explain_instruction(final_messages)
-    # Topic Finder does not generate images; zero slots also removes the image tool.
-    max_image_slots = 0 if is_topic_finder else 4 if should_auto_explain_paper else 2
+    # Zero slots also removes the image tool (Topic Finder does not generate images).
+    max_image_slots = 0 if not capabilities.image_slots else 4 if should_auto_explain_paper else 2
 
     preverified_image_blocks = None
     if settings.enable_visual_preflight:
@@ -196,10 +196,10 @@ async def prepare_answer(service, *, user_id, conversation_id, messages, use_rag
 
     if force_think:
         effective_max_tokens = 3200
-    elif is_topic_finder:
+    elif capabilities.max_answer_tokens is not None:
         # Coach turns are a few sentences; the cap stops report-length answers
         # while leaving room for a direct answer to an information request.
-        effective_max_tokens = min(effective_max_tokens, TOPIC_FINDER_MAX_TOKENS)
+        effective_max_tokens = min(effective_max_tokens, capabilities.max_answer_tokens)
     if response_mode == "voice":
         effective_max_tokens = min(effective_max_tokens, 420)
         logger.info(

@@ -20,9 +20,10 @@ from config import settings
 from services.conversation import context_instructions
 from services.conversation.language import _answer_language_instruction, _example_instruction
 from services.conversation.parts import PartsContext, format_parts_context
-from services.conversation.research_coach import is_research_coach, render_prompt_profile
+from services.conversation.research_coach import render_prompt_profile
 from services.query_policy.classifier import ResponsePolicy, default_response_policy
 from services.teaching import prompts
+from services.teaching.profiles import capabilities_for
 
 LongTermMemoryStatus = Literal["", "timeout", "fallback"]
 ResponseMode = Literal["text", "voice"]
@@ -116,8 +117,8 @@ def render_system_prompt(request: TeachingRequest, materials: TeachingMaterials 
         system_prompt += "\n【本回合狀態】：本回合無任何 <context> 資料注入。禁止輸出【文獻N】等引用標記。"
 
     system_prompt += _answer_language_instruction(request.interface_language, request.last_user_msg)
-    topic_finder = is_research_coach(request.tutor_profile)
-    if not topic_finder:
+    capabilities = capabilities_for(request.tutor_profile)
+    if not capabilities.overlay_last:
         system_prompt += render_prompt_profile(request.tutor_profile)
     system_prompt += _example_instruction(request.interface_language, request.last_user_msg)
     system_prompt += (
@@ -134,7 +135,7 @@ def render_system_prompt(request: TeachingRequest, materials: TeachingMaterials 
         "只能就當前需求提供協助，不得將其改寫成你對使用者能力、情緒、人格或學習進度的判定。"
     )
     policy = request.response_policy or default_response_policy()
-    if not topic_finder:
+    if capabilities.response_policy_overlay:
         # Topic Finder pins its own short coaching shape; a per-turn DEEP_DIVE
         # overlay here is what turned coach replies into long reports.
         system_prompt += context_instructions._response_policy_instruction(
@@ -175,7 +176,7 @@ def render_system_prompt(request: TeachingRequest, materials: TeachingMaterials 
     if any(keyword in request.last_user_msg for keyword in _SELF_CORRECTION_KEYWORDS):
         system_prompt += "\n\n【自我糾錯機制】：使用者正在質疑你的前次回答。請重新檢視最新資料；若先前回答缺乏支持，請承認錯誤並提供正確事實，不得為先前錯誤編造解釋。"
 
-    if topic_finder:
+    if capabilities.overlay_last:
         # The learner-confirmed stage decides which questions the coach may ask.
         system_prompt += render_prompt_profile(request.tutor_profile)
         system_prompt += materials.topic_card

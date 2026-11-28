@@ -34,6 +34,7 @@ from services.orchestration.completion import complete_answer
 from services.orchestration.response_policy import resolve_response_policy
 from services.orchestration.routing import plan_search
 from services.conversation.research_coach import is_research_coach
+from services.teaching.profiles import capabilities_for
 
 
 class OrchestrationExecutionMixin:
@@ -60,7 +61,7 @@ class OrchestrationExecutionMixin:
         has_attachments = bool(attachments)
         effective_search_mode = requested_search_mode
         # Topic Finder asks learners to search for themselves; it searches only when they switch search on.
-        if requested_search_mode == SearchMode.AUTO and is_research_coach(tutor_profile):
+        if requested_search_mode == SearchMode.AUTO and not capabilities_for(tutor_profile).auto_web_search:
             effective_search_mode = SearchMode.NEVER
             logger.info("orchestration.topic_finder_auto_search_skipped conversation_id=%s", conversation_id)
         elif (
