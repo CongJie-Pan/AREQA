@@ -3,6 +3,8 @@
 Run from the backend directory with REDIS_URL pointing at the production Redis:
     python -m scripts.shadow_policy_report --until 2026-12-12
 Records hold labels, statuses and timings only; this report prints aggregates.
+With --review it instead prints the opt-in review records (question, both
+decisions, served policy and answer) for local reading; never post that output.
 It needs only the ``redis`` package, so CI can run it without the backend.
 """
 
@@ -17,6 +19,8 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 SHADOW_KEY = "areqa:policy_shadow:v1"
+# Opt-in records with learner text; --review prints them locally and CI never reads them.
+REVIEW_KEY = "areqa:policy_shadow_review:v1"
 TAIPEI = ZoneInfo("Asia/Taipei")
 MIN_SAMPLES = 200
 
@@ -124,11 +128,54 @@ def render_markdown(summary: dict, *, until: str = "", today: date | None = None
     return "\n".join(lines) + "\n"
 
 
-def load_records(redis_url: str) -> list[dict]:
+def _disagrees(record: dict) -> bool:
+    comparison = record.get("comparison")
+    return bool(comparison) and comparison["gemini_move"] != comparison["jev_move"]
+
+
+def render_review(records: list[dict], *, disagreements_only: bool = False, answer_chars: int = 600) -> str:
+    """Render opt-in review records with their text. For local reading only; never post this output."""
+
+    shown = [r for r in records if _disagrees(r)] if disagreements_only else records
+    lines = [f"# Policy shadow review — {len(shown)} of {len(records)} turns", ""]
+    for record in shown:
+        when = datetime.fromtimestamp(record["ts"], TAIPEI).strftime("%Y-%m-%d %H:%M")
+        comparison = record.get("comparison")
+        served = record.get("served") or {}
+        if comparison:
+            verdict = "DISAGREE" if _disagrees(record) else "agree"
+            decisions = (
+                f"Gemini `{comparison['gemini_move']}` / {comparison['gemini_depth']} ({comparison['gemini_ms']:.0f} ms, "
+                f"{comparison['gemini_status']}) · Jev `{comparison['jev_move']}` / {comparison['jev_depth']} "
+                f"({comparison['jev_ms']:.0f} ms, {comparison['jev_status']})"
+            )
+        else:
+            verdict, decisions = "not classified", "No classifier ran this turn."
+        answer = record.get("answer") or ""
+        lines += [
+            f"## {when} — {verdict}",
+            "",
+            f"**Previous turn:** {record.get('previous') or '(none)'}",
+            "",
+            f"**Question:** {record.get('query', '')}",
+            "",
+            f"**Decisions:** {decisions}",
+            "",
+            f"**Served:** `{served.get('move', '?')}` / {served.get('depth', '?')} (source: {served.get('source', '?')})",
+            "",
+            "**Answer:**",
+            "",
+            "> " + (answer[:answer_chars] + ("…" if len(answer) > answer_chars else "")).replace("\n", "\n> "),
+            "",
+        ]
+    return "\n".join(lines) + "\n"
+
+
+def load_records(redis_url: str, key: str = SHADOW_KEY) -> list[dict]:
     import redis
 
     client = redis.from_url(redis_url, decode_responses=True, socket_timeout=10)
-    return [json.loads(item) for item in client.lrange(SHADOW_KEY, 0, -1)]
+    return [json.loads(item) for item in client.lrange(key, 0, -1)]
 
 
 if __name__ == "__main__":
@@ -136,10 +183,16 @@ if __name__ == "__main__":
     parser.add_argument("--until", default=os.getenv("POLICY_SHADOW_UNTIL", ""), help="Planned last day (YYYY-MM-DD).")
     parser.add_argument("--min-samples", type=int, default=MIN_SAMPLES)
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
+    parser.add_argument("--review", action="store_true",
+                        help="Show opt-in review records with question and answer text (local use only).")
+    parser.add_argument("--disagreements-only", action="store_true")
     args = parser.parse_args()
     redis_url = os.getenv("REDIS_URL")
     if not redis_url:
         parser.exit(2, "REDIS_URL must be set in the environment.\n")
+    if args.review:
+        print(render_review(load_records(redis_url, REVIEW_KEY), disagreements_only=args.disagreements_only), end="")
+        raise SystemExit(0)
     report = summarize(load_records(redis_url), min_samples=args.min_samples)
     if args.format == "json":
         print(json.dumps(report, indent=2))

@@ -22,6 +22,7 @@ from typing import Any, Awaitable, Callable
 from config import settings
 from services.query_policy.learning_guardrails import _apply_learning_and_evidence_guardrails
 from services.query_policy.models import ResponsePolicy, default_response_policy
+from services.query_policy import shadow_review
 from services.query_policy.pdf_guardrails import _apply_attachment_guardrails, _apply_pdf_auto_explain_guardrail
 from services.query_policy.teaching_jev import classify_teaching_decision, policy_from_decision, previous_turn
 
@@ -106,6 +107,7 @@ async def _store(record: dict) -> None:
 
 async def _compare(
     gemini_task: asyncio.Future, jev_awaitable: Awaitable[ResponsePolicy], budget_ms: int, *, has_pdf_attachment: bool,
+    review: shadow_review.ReviewCapture | None = None,
 ) -> None:
     (gemini, gemini_status, gemini_ms), (jev, jev_status, jev_ms) = await asyncio.gather(
         _timed(asyncio.shield(gemini_task)), _timed(jev_awaitable),
@@ -137,6 +139,8 @@ async def _compare(
         gemini_status == "ok" and gemini_ms <= budget_ms, jev_status == "ok" and jev_ms <= budget_ms, budget_ms,
     )
     await _store(record)
+    if review is not None:
+        review.add_comparison(record)
 
 
 async def classify_with_backend(
@@ -170,12 +174,16 @@ async def classify_with_backend(
             logger.info("policy.shadow_expired until=%s serving=gemini", settings.policy_shadow_until)
         return await gemini()
 
+    review = shadow_review.current()
+    if review is not None:
+        review.expect_comparison()
     gemini_task = asyncio.ensure_future(gemini())
     comparison = asyncio.create_task(_compare(
         gemini_task,
         classify_jev_policy(client, user_msg, chat_history, has_pdf_attachment=has_pdf_attachment),
         settings.policy_classifier_timeout_ms,
         has_pdf_attachment=has_pdf_attachment,
+        review=review,
     ))
     _shadow_tasks.add(comparison)
     comparison.add_done_callback(_shadow_tasks.discard)

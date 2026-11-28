@@ -61,3 +61,33 @@ def test_final_report_adds_next_steps_after_the_end_date():
     assert "(final)" not in interim and "Next steps" not in interim
     assert "(final)" in final and "### Next steps" in final
     assert "POLICY_CLASSIFIER_BACKEND=jev" in final
+
+
+def _review(gemini="LEARN_EXPLAIN_PREREQ", jev="PRACTICE_HINT", *, answer="ans", comparison=True):
+    record = {"ts": TS, "user_hash": "abc", "query": "Q?", "previous": "", "answer": answer,
+              "served": {"source": "classifier", "move": gemini, "depth": "SCAFFOLDED"}, "comparison": None}
+    if comparison:
+        record["comparison"] = _record(gemini, jev)
+    return record
+
+
+def test_review_lists_text_with_both_decisions_and_filters_disagreements():
+    from scripts.shadow_policy_report import render_review
+
+    records = [_review(), _review(jev="LEARN_EXPLAIN_PREREQ"), _review(comparison=False)]
+
+    everything = render_review(records)
+    disagreements = render_review(records, disagreements_only=True)
+
+    assert "3 of 3 turns" in everything and "not classified" in everything
+    assert "1 of 3 turns" in disagreements and "DISAGREE" in disagreements
+    assert "**Question:** Q?" in disagreements
+    assert "Gemini `LEARN_EXPLAIN_PREREQ`" in disagreements and "Jev `PRACTICE_HINT`" in disagreements
+
+
+def test_review_truncates_long_answers():
+    from scripts.shadow_policy_report import render_review
+
+    text = render_review([_review(answer="x" * 1000)], answer_chars=10)
+
+    assert "> xxxxxxxxxx…" in text

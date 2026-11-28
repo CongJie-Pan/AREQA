@@ -35,6 +35,8 @@ from services.orchestration.response_policy import resolve_response_policy
 from services.orchestration.routing import plan_search
 from services.conversation.research_coach import is_research_coach
 from services.teaching.profiles import capabilities_for
+from services.query_policy import shadow_review
+from services.query_policy.teaching_jev import previous_turn
 
 
 class OrchestrationExecutionMixin:
@@ -51,6 +53,8 @@ class OrchestrationExecutionMixin:
                       isolated_context: bool = False,
                       project_prompt: str = "") -> AsyncGenerator[str, None]:
         last_user_msg = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+        # Opt-in text review for the policy shadow experiment; None for everyone else.
+        review = shadow_review.start(user_id, last_user_msg, previous_turn(messages))
 
         request_id_header = request.headers.get("x-request-id") if request and request.headers else None
         requested_search_mode = (
@@ -368,6 +372,8 @@ class OrchestrationExecutionMixin:
             user_msg=last_user_msg,
             manifest=attachment_manifest,
         )
+        if review is not None:
+            review.record_served(response_policy, response_policy_source)
         logger.info(
             "orchestration.response_policy_applied conversation_id=%s source=%s metadata=%s",
             conversation_id,
@@ -443,6 +449,8 @@ class OrchestrationExecutionMixin:
                     planned_image_slots = []
                 continue
             yield sse_adapter.encode_legacy(event, run_context.run_id)
+        if review is not None:
+            review.finish(answer_content_accumulator)
         if planned_image_slots:
             logger.info(
                 "visual.answer_slots_collected conversation_id=%s slot_count=%s",
