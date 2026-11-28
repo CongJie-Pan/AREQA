@@ -1,0 +1,53 @@
+{
+ "completed": {
+  "provider_calls": 1,
+  "frames": [
+   "data: {\"choices\": [{\"delta\": {\"content\": \"效果量是差異大小。\"}, \"index\": 0, \"finish_reason\": null}]}\n\n",
+   "event: accumulator\ndata: {\"accumulator\": \"效果量是差異大小。\", \"image_slots\": [], \"generated_blocks\": []}\n\n"
+  ]
+ },
+ "output_limit": {
+  "provider_calls": 1,
+  "frames": [
+   "data: {\"choices\": [{\"delta\": {\"content\": \"說到一半\"}, \"index\": 0, \"finish_reason\": null}]}\n\n",
+   "data: {\"choices\": [{\"delta\": {\"content\": \"\\n\\n（回答已達單次長度上限而中斷，可以回覆「繼續」讓我接著說。）\"}, \"index\": 0, \"finish_reason\": null}]}\n\n",
+   "event: accumulator\ndata: {\"accumulator\": \"說到一半\\n\\n（回答已達單次長度上限而中斷，可以回覆「繼續」讓我接著說。）\", \"image_slots\": [], \"generated_blocks\": []}\n\n"
+  ]
+ },
+ "context_overflow_retry": {
+  "provider_calls": 2,
+  "frames": [
+   "event: status\ndata: {\"status\":\"routing\",\"message\":\"正在調整上下文並重新準備回答\"}\n\n",
+   "data: {\"choices\": [{\"delta\": {\"content\": \"重試後的回答\"}, \"index\": 0, \"finish_reason\": null}]}\n\n",
+   "event: accumulator\ndata: {\"accumulator\": \"重試後的回答\", \"image_slots\": [], \"generated_blocks\": []}\n\n"
+  ]
+ },
+ "context_overflow_exhausted": {
+  "provider_calls": 2,
+  "frames": [
+   "event: status\ndata: {\"status\":\"routing\",\"message\":\"正在調整上下文並重新準備回答\"}\n\n",
+   "data: {\"choices\": [{\"delta\": {\"content\": \"模型仍無法容納本次必要上下文，請精簡問題後重試。\"}, \"index\": 0}]}\n\n",
+   "event: accumulator\ndata: {\"accumulator\": \"\", \"image_slots\": [], \"generated_blocks\": []}\n\n"
+  ]
+ },
+ "image_tool": {
+  "provider_calls": 1,
+  "frames": [
+   "event: tool_state\ndata: {\"tool_call_id\": \"call_1\", \"tool\": \"generate_image\", \"state\": \"accepted\"}\n\n",
+   "event: answer_blocks\ndata: [{\"type\": \"paragraph\", \"text\": \"圖解說明\"}, {\"type\": \"image_block\", \"slotId\": \"<id>\", \"provider\": \"generated_image\", \"purpose\": \"diagram\", \"status\": \"pending\", \"imageUrl\": \"\", \"caption\": \"\", \"safetyStatus\": \"unavailable\", \"matchConfidence\": 0, \"generationRequest\": {\"prompt\": \"效果量示意圖\", \"language\": \"zh-TW\", \"requiresReference\": false}}]\n\n",
+   "event: tool_state\ndata: {\"tool_call_id\": \"call_1\", \"tool\": \"generate_image\", \"state\": \"generating\"}\n\n",
+   "event: answer_blocks\ndata: [{\"type\": \"paragraph\", \"text\": \"圖解說明\"}, {\"type\": \"image_block\", \"slotId\": \"<id>\", \"provider\": \"generated_image\", \"purpose\": \"diagram\", \"status\": \"pending\", \"imageUrl\": \"\", \"caption\": \"\", \"safetyStatus\": \"unavailable\", \"matchConfidence\": 0, \"generationRequest\": {\"prompt\": \"效果量示意圖\", \"language\": \"zh-TW\", \"requiresReference\": false, \"referenceBrief\": \"\"}, \"generationState\": \"generating\"}]\n\n",
+   "event: tool_state\ndata: {\"tool_call_id\": \"call_1\", \"tool\": \"generate_image\", \"state\": \"completed\"}\n\n",
+   "event: answer_blocks\ndata: [{\"type\": \"paragraph\", \"text\": \"圖解說明\"}, {\"type\": \"image_block\", \"slotId\": \"<id>\", \"topic\": \"教學圖\", \"purpose\": \"diagram\", \"imageUrl\": \"https://example.com/private.png\", \"thumbnailUrl\": \"https://example.com/private.png\", \"sourceUrl\": \"\", \"sourceDomain\": \"\", \"caption\": \"教學圖\", \"provider\": \"generated_image\", \"generationRequest\": {\"prompt\": \"效果量示意圖\", \"language\": \"zh-TW\", \"referenceBrief\": \"\"}, \"safetyStatus\": \"pass\", \"matchConfidence\": 1.0, \"transient\": false, \"storageBucket\": \"\", \"storagePath\": \"\", \"storageExpiresAt\": null, \"visionSummary\": \"\", \"howToRead\": [], \"explanatoryCaption\": \"\"}]\n\n",
+   "event: accumulator\ndata: {\"accumulator\": \"圖解說明\", \"image_slots\": [], \"generated_blocks\": [{\"type\": \"paragraph\", \"text\": \"圖解說明\"}, {\"type\": \"image_block\", \"slotId\": \"<id>\", \"topic\": \"教學圖\", \"purpose\": \"diagram\", \"imageUrl\": \"https://example.com/private.png\", \"thumbnailUrl\": \"https://example.com/private.png\", \"sourceUrl\": \"\", \"sourceDomain\": \"\", \"caption\": \"教學圖\", \"provider\": \"generated_image\", \"generationRequest\": {\"prompt\": \"效果量示意圖\", \"language\": \"zh-TW\", \"referenceBrief\": \"\"}, \"safetyStatus\": \"pass\", \"matchConfidence\": 1.0, \"transient\": false, \"storageBucket\": \"\", \"storagePath\": \"\", \"storageExpiresAt\": null, \"visionSummary\": \"\", \"howToRead\": [], \"explanatoryCaption\": \"\"}]}\n\n"
+  ]
+ },
+ "image_tool_invalid_arguments": {
+  "provider_calls": 1,
+  "frames": [
+   "data: {\"choices\": [{\"delta\": {\"content\": \"先說明\"}, \"index\": 0, \"finish_reason\": null}]}\n\n",
+   "event: answer_blocks\ndata: [{\"type\": \"paragraph\", \"text\": \"先說明\"}, {\"type\": \"image_block\", \"slotId\": \"<id>\", \"provider\": \"generated_image\", \"imageUrl\": \"\", \"status\": \"error\", \"caption\": \"IMAGE_GENERATION_FAILED\"}]\n\n",
+   "event: accumulator\ndata: {\"accumulator\": \"先說明\", \"image_slots\": [], \"generated_blocks\": [{\"type\": \"paragraph\", \"text\": \"先說明\"}, {\"type\": \"image_block\", \"slotId\": \"<id>\", \"provider\": \"generated_image\", \"imageUrl\": \"\", \"status\": \"error\", \"caption\": \"IMAGE_GENERATION_FAILED\"}]}\n\n"
+  ]
+ }
+}
